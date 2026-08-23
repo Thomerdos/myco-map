@@ -103,7 +103,7 @@ final class SpeciesScoringService
         $altitudeRange = match ($speciesId) {
             'cepe' => [500, 1700],
             'trompette' => [400, 1500],
-            'chanterelle' => [600, 1900],
+            'chanterelle' => [400, 2000],
             'girolle' => [500, 1800],
             'pied_mouton' => [500, 1700],
             'morille' => [400, 1400],
@@ -179,8 +179,7 @@ final class SpeciesScoringService
         $preferred = match ($speciesId) {
             'cepe' => ['feuillu', 'mixte', 'forestier'],
             'trompette' => ['feuillu', 'mixte', 'forestier'],
-            'chanterelle' => ['conifere', 'mixte', 'forestier'],
-            'girolle' => ['mixte', 'conifere', 'feuillu', 'forestier'],
+            'chanterelle', 'girolle' => ['mixte', 'conifere', 'feuillu', 'forestier'],
             'pied_mouton' => ['conifere', 'mixte', 'feuillu', 'forestier'],
             'morille' => ['feuillu', 'mixte', 'forestier'],
             default => ['forestier'],

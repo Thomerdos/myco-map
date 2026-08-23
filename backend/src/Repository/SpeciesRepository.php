@@ -33,11 +33,13 @@ final class SpeciesRepository
             ),
             'chanterelle' => new Species(
                 id: 'chanterelle',
-                name: 'Chanterelle améthyste',
-                scientificName: 'Cantharellus amethysteus',
-                description: 'Forêts de conifères et mixtes, sols humides, souvent près des racines de sapin ou épicéa.',
+                name: 'Chanterelles',
+                scientificName: 'Cantharellus spp. · Craterellus tubaeformis',
+                description: 'Ensemble des chanterelles des massifs (améthyste, pâle, ferrugineuse, cendrée, en tube…). Forêts de feuillus, mixtes et conifères, sols humides et mousses, lisières et fonds de combe.',
                 harvestWindows: [
-                    ['start' => '07-01', 'end' => '10-31', 'peak' => true, 'label' => 'Été – automne (pic juil.-sept.)'],
+                    ['start' => '06-01', 'end' => '11-15', 'peak' => true, 'label' => 'Été – automne (pic juil.–oct.)'],
+                    ['start' => '06-01', 'end' => '06-30', 'peak' => false, 'label' => 'Début juin (pâle, ferrugineuse en plaine de montagne)'],
+                    ['start' => '09-01', 'end' => '11-15', 'peak' => false, 'label' => 'Fin de saison (en tube, améthyste)'],
                 ],
             ),
             'girolle' => new Species(
