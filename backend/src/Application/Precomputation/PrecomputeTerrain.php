@@ -89,6 +89,7 @@ final readonly class PrecomputeTerrain
             elevationTiles: $tiles,
             forestPolygons: $forestCount,
             waterFeatures: $waterCount,
+            unavailableChunks: $this->landCover->unavailableChunks(),
             durationSeconds: microtime(true) - $startedAt,
         );
     }

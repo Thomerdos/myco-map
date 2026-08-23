@@ -14,7 +14,13 @@ final readonly class PrecomputationReport
         public int $elevationTiles,
         public int $forestPolygons,
         public int $waterFeatures,
+        public int $unavailableChunks,
         public float $durationSeconds,
     ) {
+    }
+
+    public function isComplete(): bool
+    {
+        return $this->unavailableChunks === 0;
     }
 }

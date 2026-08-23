@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Cartography;
 
-use App\Domain\Mycology\SuitabilityScore;
 use App\Domain\Terrain\TerrainProfile;
 use App\Domain\Weather\WeatherConditions;
 
@@ -14,10 +13,10 @@ final readonly class LayerValueResolver
         MapLayer $layer,
         TerrainProfile $terrain,
         WeatherConditions $weather,
-        ?SuitabilityScore $score,
-    ): ?float {
+        float $potential,
+    ): float {
         return match ($layer) {
-            MapLayer::Potential => $score?->value,
+            MapLayer::Potential => $potential,
             MapLayer::Elevation => (float) $terrain->elevationMeters,
             MapLayer::Exposure => $terrain->exposure()->coolness() * 100,
             MapLayer::Slope => $terrain->slopeDegrees,

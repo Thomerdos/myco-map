@@ -6,14 +6,16 @@ namespace App\Application\Cartography;
 
 use App\Domain\Cartography\LayerLegendFactory;
 use App\Domain\Cartography\LayerValueResolver;
-use App\Domain\Cartography\MapLayer;
 use App\Domain\Geo\BoundingBox;
 use App\Domain\Geo\Coordinates;
 use App\Domain\Geo\SurveyArea;
 use App\Domain\Mycology\SeasonAssessment;
+use App\Domain\Mycology\Species;
 use App\Domain\Mycology\SpeciesCatalog;
 use App\Domain\Mycology\SuitabilityCalculator;
 use App\Domain\Terrain\TerrainCellStore;
+use App\Domain\Terrain\TerrainProfile;
+use App\Domain\Weather\WeatherConditions;
 use App\Domain\Weather\WeatherSource;
 
 /**
@@ -52,7 +54,7 @@ final readonly class RenderLayerGrid
         $rows = $window->rows();
         $values = array_fill(0, $columns * $rows, null);
 
-        $scored = [];
+        $candidates = [];
         $sum = 0.0;
         $count = 0;
         $best = null;
@@ -60,15 +62,9 @@ final readonly class RenderLayerGrid
         foreach ($this->cellStore->readWindow($window) as $entry) {
             $profile = $entry['profile'];
             $weather = $weatherField->at($profile->coordinates);
+            $potential = $this->calculator->evaluate($species, $profile, $weather, $season);
 
-            $score = $query->layer->requiresSpecies() || $query->layer === MapLayer::Potential
-                ? $this->calculator->score($species, $profile, $weather, $season)
-                : null;
-
-            $value = $this->valueResolver->resolve($query->layer, $profile, $weather, $score);
-            if ($value === null) {
-                continue;
-            }
+            $value = $this->valueResolver->resolve($query->layer, $profile, $weather, $potential);
 
             $localColumn = $window->localColumn($entry['column']);
             $localRow = $window->localRow($entry['row']);
@@ -85,8 +81,8 @@ final readonly class RenderLayerGrid
                 $best = $value;
             }
 
-            if ($score !== null && $score->value >= 55) {
-                $scored[] = ['profile' => $profile, 'score' => $score];
+            if ($potential >= 55) {
+                $candidates[] = ['profile' => $profile, 'potential' => $potential, 'weather' => $weather];
             }
         }
 
@@ -112,7 +108,7 @@ final readonly class RenderLayerGrid
                 'best' => $best !== null ? round($best, 1) : null,
                 'resolution' => $effectiveCellSize,
             ],
-            highlights: $this->pickHighlights($scored),
+            highlights: $this->pickHighlights($candidates, $species, $season),
             weather: $weatherField->at($query->viewport->center())->toArray()
                 + ['degraded' => $weatherField->degraded],
             species: [
@@ -134,25 +130,28 @@ final readonly class RenderLayerGrid
 
     /**
      * Keeps the best cells while enforcing a minimum spacing, so the list reads as
-     * distinct spots to visit rather than one hotspot repeated.
+     * distinct spots to visit rather than one hotspot repeated. Explanations are only
+     * built for the few cells that survive the selection.
      *
-     * @param list<array{profile: \App\Domain\Terrain\TerrainProfile, score: \App\Domain\Mycology\SuitabilityScore}> $scored
+     * @param list<array{profile: TerrainProfile, potential: float, weather: WeatherConditions}> $candidates
      * @return list<array<string, mixed>>
      */
-    private function pickHighlights(array $scored): array
+    private function pickHighlights(array $candidates, Species $species, SeasonAssessment $season): array
     {
-        usort($scored, static fn (array $a, array $b): int => $b['score']->value <=> $a['score']->value);
+        usort($candidates, static fn (array $a, array $b): int => $b['potential'] <=> $a['potential']);
 
         $selected = [];
         /** @var list<Coordinates> $chosen */
         $chosen = [];
 
-        foreach ($scored as $candidate) {
+        foreach ($candidates as $candidate) {
             if (\count($selected) >= self::HIGHLIGHT_COUNT) {
                 break;
             }
 
-            $point = $candidate['profile']->coordinates;
+            $profile = $candidate['profile'];
+            $point = $profile->coordinates;
+
             foreach ($chosen as $existing) {
                 if ($point->distanceTo($existing) < self::HIGHLIGHT_SPACING_METERS) {
                     continue 2;
@@ -160,20 +159,20 @@ final readonly class RenderLayerGrid
             }
 
             $chosen[] = $point;
-            $drivers = $candidate['score']->drivers(3);
+            $score = $this->calculator->score($species, $profile, $candidate['weather'], $season);
 
             $selected[] = [
                 'lat' => round($point->latitude, 5),
                 'lng' => round($point->longitude, 5),
-                'score' => round($candidate['score']->value, 1),
-                'level' => $candidate['score']->level->value,
-                'levelLabel' => $candidate['score']->level->label(),
-                'elevation' => $candidate['profile']->elevationMeters,
-                'exposure' => $candidate['profile']->exposure()->cardinal(),
-                'cover' => $candidate['profile']->cover->label(),
+                'score' => round($score->value, 1),
+                'level' => $score->level->value,
+                'levelLabel' => $score->level->label(),
+                'elevation' => $profile->elevationMeters,
+                'exposure' => $profile->exposure()->cardinal(),
+                'cover' => $profile->cover->label(),
                 'reasons' => array_map(
                     static fn ($driver): string => $driver->explanation,
-                    $drivers
+                    $score->drivers(3),
                 ),
             ];
         }

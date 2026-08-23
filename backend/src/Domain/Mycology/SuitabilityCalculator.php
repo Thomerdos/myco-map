@@ -8,28 +8,76 @@ use App\Domain\Terrain\TerrainProfile;
 use App\Domain\Weather\WeatherConditions;
 
 /**
- * Transparent, rule-based habitat model. Every criterion returns a 0..100 score with
- * a sentence explaining it, so a recommendation can always be justified on the map.
+ * Transparent, rule-based habitat model.
+ *
+ * Two entry points on purpose: {@see evaluate()} returns only the number and is cheap
+ * enough to run on every cell of a viewport, while {@see score()} additionally builds
+ * the sentences explaining each criterion and is reserved for the handful of cells the
+ * user actually inspects.
  */
 final readonly class SuitabilityCalculator
 {
+    public function evaluate(
+        Species $species,
+        TerrainProfile $terrain,
+        WeatherConditions $weather,
+        SeasonAssessment $season,
+    ): float {
+        $total = $season->criterionScore->weighted()
+            + $this->weatherValue($weather) * Criterion::Weather->weight()
+            + $this->altitudeValue($species, $terrain) * Criterion::Altitude->weight()
+            + $this->exposureValue($species, $terrain) * Criterion::Exposure->weight()
+            + $this->coverValue($species, $terrain) * Criterion::Cover->weight()
+            + $this->moistureValue($species, $terrain) * Criterion::Moisture->weight()
+            + $this->edgeValue($species, $terrain) * Criterion::Edge->weight()
+            + $this->slopeValue($species, $terrain) * Criterion::Slope->weight();
+
+        return $this->applyCaps($total, $species, $terrain, $season);
+    }
+
     public function score(
         Species $species,
         TerrainProfile $terrain,
         WeatherConditions $weather,
         SeasonAssessment $season,
     ): SuitabilityScore {
-        $inSeason = $season->isInSeason();
-
         $breakdown = [
             $season->criterionScore,
-            $this->weather($weather),
-            $this->altitude($species, $terrain),
-            $this->exposure($species, $terrain),
-            $this->cover($species, $terrain),
-            $this->moisture($species, $terrain),
-            $this->edge($species, $terrain),
-            $this->slope($species, $terrain),
+            new CriterionScore(
+                Criterion::Weather,
+                $this->weatherValue($weather),
+                $this->explainWeather($weather),
+            ),
+            new CriterionScore(
+                Criterion::Altitude,
+                $this->altitudeValue($species, $terrain),
+                $this->explainAltitude($species, $terrain),
+            ),
+            new CriterionScore(
+                Criterion::Exposure,
+                $this->exposureValue($species, $terrain),
+                $this->explainExposure($species, $terrain),
+            ),
+            new CriterionScore(
+                Criterion::Cover,
+                $this->coverValue($species, $terrain),
+                sprintf('%s — hôtes recherchés : %s', $terrain->cover->label(), $species->hostTrees),
+            ),
+            new CriterionScore(
+                Criterion::Moisture,
+                $this->moistureValue($species, $terrain),
+                $this->explainMoisture($terrain),
+            ),
+            new CriterionScore(
+                Criterion::Edge,
+                $this->edgeValue($species, $terrain),
+                $this->explainEdge($species, $terrain),
+            ),
+            new CriterionScore(
+                Criterion::Slope,
+                $this->slopeValue($species, $terrain),
+                sprintf('Pente de %.0f°', $terrain->slopeDegrees),
+            ),
         ];
 
         $total = 0.0;
@@ -37,75 +85,125 @@ final readonly class SuitabilityCalculator
             $total += $criterionScore->weighted();
         }
 
-        if ($species->requiresForest && !$terrain->cover->isForest()) {
-            $total = min($total, 18.0);
-        }
-        if (!$inSeason) {
-            $total = min($total, 38.0);
-        }
-
-        $total = max(0.0, min(100.0, $total));
+        $total = $this->applyCaps($total, $species, $terrain, $season);
 
         return new SuitabilityScore(
             $total,
             SuitabilityLevel::fromScore($total),
             $breakdown,
-            $inSeason,
+            $season->isInSeason(),
         );
     }
 
-    private function weather(WeatherConditions $weather): CriterionScore
+    private function applyCaps(
+        float $total,
+        Species $species,
+        TerrainProfile $terrain,
+        SeasonAssessment $season,
+    ): float {
+        if ($species->requiresForest && !$terrain->cover->isForest()) {
+            $total = min($total, 18.0);
+        }
+        if (!$season->isInSeason()) {
+            $total = min($total, 38.0);
+        }
+
+        return max(0.0, min(100.0, $total));
+    }
+
+    private function weatherValue(WeatherConditions $weather): float
     {
-        $trigger = $weather->triggerRainMillimetres;
-        $triggerScore = match (true) {
-            $trigger >= 45 => 100.0,
-            $trigger >= 30 => 88.0,
-            $trigger >= 20 => 72.0,
-            $trigger >= 12 => 55.0,
-            $trigger >= 6 => 35.0,
+        $trigger = match (true) {
+            $weather->triggerRainMillimetres >= 45 => 100.0,
+            $weather->triggerRainMillimetres >= 30 => 88.0,
+            $weather->triggerRainMillimetres >= 20 => 72.0,
+            $weather->triggerRainMillimetres >= 12 => 55.0,
+            $weather->triggerRainMillimetres >= 6 => 35.0,
             default => 12.0,
         };
 
-        $recent = $weather->recentRainMillimetres;
-        $recentScore = match (true) {
-            $recent >= 25 => 70.0,
-            $recent >= 4 => 100.0,
-            $recent >= 1 => 80.0,
+        $recent = match (true) {
+            $weather->recentRainMillimetres >= 25 => 70.0,
+            $weather->recentRainMillimetres >= 4 => 100.0,
+            $weather->recentRainMillimetres >= 1 => 80.0,
             default => 45.0,
         };
 
-        $temperature = $weather->meanTemperatureCelsius;
-        $temperatureScore = match (true) {
-            $temperature >= 9 && $temperature <= 17 => 100.0,
-            $temperature >= 6 && $temperature < 9 => 78.0,
-            $temperature > 17 && $temperature <= 21 => 70.0,
-            $temperature > 21 => 35.0,
-            $temperature >= 2 => 45.0,
+        $temperature = match (true) {
+            $weather->meanTemperatureCelsius >= 9 && $weather->meanTemperatureCelsius <= 17 => 100.0,
+            $weather->meanTemperatureCelsius >= 6 && $weather->meanTemperatureCelsius < 9 => 78.0,
+            $weather->meanTemperatureCelsius > 17 && $weather->meanTemperatureCelsius <= 21 => 70.0,
+            $weather->meanTemperatureCelsius > 21 => 35.0,
+            $weather->meanTemperatureCelsius >= 2 => 45.0,
             default => 12.0,
         };
 
-        $humidityScore = min(100.0, max(20.0, ($weather->relativeHumidityPercent - 45) * 2.2));
+        $humidity = min(100.0, max(20.0, ($weather->relativeHumidityPercent - 45) * 2.2));
 
-        $value = $triggerScore * 0.46 + $recentScore * 0.2 + $temperatureScore * 0.22 + $humidityScore * 0.12;
+        return $trigger * 0.46 + $recent * 0.20 + $temperature * 0.22 + $humidity * 0.12;
+    }
 
-        return new CriterionScore(
-            Criterion::Weather,
-            $value,
-            sprintf(
-                '%.0f mm de pluie déclenchante (J-14 à J-5), %.0f mm ces 5 derniers jours, %.1f °C de moyenne',
-                $trigger,
-                $recent,
-                $temperature,
-            ),
+    private function altitudeValue(Species $species, TerrainProfile $terrain): float
+    {
+        return $species->altitude->suitability($terrain->elevationMeters) * 100;
+    }
+
+    /**
+     * In mountains the preferred orientation shifts with altitude: cool north-facing
+     * slopes stay productive low down, while higher up the warmer southern slopes
+     * catch up.
+     */
+    private function exposureValue(Species $species, TerrainProfile $terrain): float
+    {
+        $exposure = $terrain->exposure();
+        $value = max(0.0, 100.0 - abs($exposure->coolness() - $this->coolTarget($species, $terrain)) * 165);
+
+        return $exposure->isFlat() ? max($value, 62.0) : $value;
+    }
+
+    private function coolTarget(Species $species, TerrainProfile $terrain): float
+    {
+        $altitudeShift = max(-0.22, min(0.22, ($terrain->elevationMeters - 1000) / 1000 * 0.22));
+
+        return max(0.05, min(0.95, $species->coolPreference - $altitudeShift));
+    }
+
+    private function coverValue(Species $species, TerrainProfile $terrain): float
+    {
+        return $species->coverSuitability($terrain->cover) * 100;
+    }
+
+    private function moistureValue(Species $species, TerrainProfile $terrain): float
+    {
+        return max(0.0, 100.0 - abs($terrain->moistureIndex() - $species->moisturePreference) * 130);
+    }
+
+    private function edgeValue(Species $species, TerrainProfile $terrain): float
+    {
+        return $species->edgeAffinity->suitability($terrain->edgeDistanceMeters) * 100;
+    }
+
+    private function slopeValue(Species $species, TerrainProfile $terrain): float
+    {
+        return $species->slope->suitability($terrain->slopeDegrees) * 100;
+    }
+
+    private function explainWeather(WeatherConditions $weather): string
+    {
+        return sprintf(
+            '%.0f mm de pluie déclenchante (J-14 à J-5), %.0f mm ces 5 derniers jours, %.1f °C de moyenne',
+            $weather->triggerRainMillimetres,
+            $weather->recentRainMillimetres,
+            $weather->meanTemperatureCelsius,
         );
     }
 
-    private function altitude(Species $species, TerrainProfile $terrain): CriterionScore
+    private function explainAltitude(Species $species, TerrainProfile $terrain): string
     {
-        $membership = $species->altitude->suitability($terrain->elevationMeters);
         $band = $species->altitude;
+        $membership = $band->suitability($terrain->elevationMeters);
 
-        $explanation = match (true) {
+        return match (true) {
             $membership >= 0.95 => sprintf(
                 '%d m, dans la tranche optimale %d–%d m',
                 $terrain->elevationMeters,
@@ -125,64 +223,30 @@ final readonly class SuitabilityCalculator
                 $band->optimumHigh,
             ),
         };
-
-        return new CriterionScore(Criterion::Altitude, $membership * 100, $explanation);
     }
 
-    /**
-     * In mountains the preferred orientation shifts with altitude: cool north-facing
-     * slopes stay productive low down, while higher up the warmer southern slopes
-     * catch up.
-     */
-    private function exposure(Species $species, TerrainProfile $terrain): CriterionScore
+    private function explainExposure(Species $species, TerrainProfile $terrain): string
     {
         $exposure = $terrain->exposure();
-        $coolness = $exposure->coolness();
-
-        $altitudeShift = max(-0.22, min(0.22, ($terrain->elevationMeters - 1000) / 1000 * 0.22));
-        $target = max(0.05, min(0.95, $species->coolPreference - $altitudeShift));
-
-        $value = max(0.0, 100.0 - abs($coolness - $target) * 165);
 
         if ($exposure->isFlat()) {
-            $value = max($value, 62.0);
-
-            return new CriterionScore(
-                Criterion::Exposure,
-                $value,
-                sprintf('Terrain peu pentu (%.0f°), l\'exposition joue peu', $terrain->slopeDegrees),
-            );
+            return sprintf('Terrain peu pentu (%.0f°), l\'exposition joue peu', $terrain->slopeDegrees);
         }
 
-        $explanation = sprintf(
+        return sprintf(
             'Versant %s à %.0f° de pente (fraîcheur %.2f, cible %.2f à %d m)',
             $exposure->cardinal(),
             $terrain->slopeDegrees,
-            $coolness,
-            $target,
+            $exposure->coolness(),
+            $this->coolTarget($species, $terrain),
             $terrain->elevationMeters,
         );
-
-        return new CriterionScore(Criterion::Exposure, $value, $explanation);
     }
 
-    private function cover(Species $species, TerrainProfile $terrain): CriterionScore
+    private function explainMoisture(TerrainProfile $terrain): string
     {
-        $value = $species->coverSuitability($terrain->cover) * 100;
-
-        return new CriterionScore(
-            Criterion::Cover,
-            $value,
-            sprintf('%s — hôtes recherchés : %s', $terrain->cover->label(), $species->hostTrees),
-        );
-    }
-
-    private function moisture(Species $species, TerrainProfile $terrain): CriterionScore
-    {
-        $index = $terrain->moistureIndex();
-        $value = max(0.0, 100.0 - abs($index - $species->moisturePreference) * 130);
-
         $descriptors = [];
+
         if ($terrain->curvature > 0.4) {
             $descriptors[] = 'creux de combe où l\'humidité s\'accumule';
         } elseif ($terrain->curvature < -0.4) {
@@ -192,38 +256,19 @@ final readonly class SuitabilityCalculator
             $descriptors[] = sprintf('ruisseau à %d m', $terrain->waterDistanceMeters);
         }
 
-        return new CriterionScore(
-            Criterion::Moisture,
-            $value,
-            $descriptors === []
-                ? sprintf('Humidité topographique %.2f', $index)
-                : sprintf('Humidité topographique %.2f — %s', $index, implode(', ', $descriptors)),
-        );
+        $index = $terrain->moistureIndex();
+
+        return $descriptors === []
+            ? sprintf('Humidité topographique %.2f', $index)
+            : sprintf('Humidité topographique %.2f — %s', $index, implode(', ', $descriptors));
     }
 
-    private function edge(Species $species, TerrainProfile $terrain): CriterionScore
+    private function explainEdge(Species $species, TerrainProfile $terrain): string
     {
-        $value = $species->edgeAffinity->suitability($terrain->edgeDistanceMeters) * 100;
-
         $position = $terrain->edgeDistanceMeters >= 0
-            ? sprintf('à %d m de la lisière, dans le boisement', $terrain->edgeDistanceMeters)
-            : sprintf('hors boisement, forêt à %d m', abs($terrain->edgeDistanceMeters));
+            ? sprintf('À %d m de la lisière, dans le boisement', $terrain->edgeDistanceMeters)
+            : sprintf('Hors boisement, forêt à %d m', abs($terrain->edgeDistanceMeters));
 
-        return new CriterionScore(
-            Criterion::Edge,
-            $value,
-            sprintf('%s — %s', ucfirst($position), lcfirst($species->edgeAffinity->label())),
-        );
-    }
-
-    private function slope(Species $species, TerrainProfile $terrain): CriterionScore
-    {
-        $value = $species->slope->suitability($terrain->slopeDegrees) * 100;
-
-        return new CriterionScore(
-            Criterion::Slope,
-            $value,
-            sprintf('Pente de %.0f°', $terrain->slopeDegrees),
-        );
+        return sprintf('%s — %s', $position, lcfirst($species->edgeAffinity->label()));
     }
 }

@@ -20,4 +20,10 @@ interface LandCoverSource
      * @return iterable<int, list<WaterFeature>>
      */
     public function waterFeatures(BoundingBox $bounds): iterable;
+
+    /**
+     * Number of tiles that could not be retrieved, so callers can report partial
+     * coverage instead of silently mapping holes.
+     */
+    public function unavailableChunks(): int;
 }
