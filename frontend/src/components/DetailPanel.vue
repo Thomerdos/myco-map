@@ -184,10 +184,9 @@ function weatherTone(weather: LocationReport['weather']): string {
 }
 
 .score-value {
-  font-family: var(--font-display);
   font-size: 2.4rem;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.04em;
   line-height: 1;
 }
 

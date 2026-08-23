@@ -288,7 +288,7 @@ function renderHighlights(grid: LayerGrid | null) {
   height: 100%;
   transform: rotate(45deg);
   color: #16190f;
-  font-family: var(--font-ui, 'Sora', sans-serif);
+  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
   font-size: 0.74rem;
   font-style: normal;
   font-weight: 700;
