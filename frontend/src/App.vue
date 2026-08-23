@@ -242,7 +242,12 @@ function onSpeciesChange(species: string) {
 
 <style>
 :root {
-  font-family: 'Source Serif 4', 'Libre Baskerville', Georgia, serif;
+  --font-ui: 'Sora', 'Avenir Next', 'Segoe UI', sans-serif;
+  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  font-family: var(--font-ui);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
   color: #2b261f;
   background: #1a2420;
 }
@@ -303,7 +308,10 @@ input {
 }
 
 .brand strong {
-  font-size: 1.05rem;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   color: #14342a;
 }
 
