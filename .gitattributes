@@ -1,0 +1,10 @@
+* text=auto eol=lf
+
+*.sqlite binary
+*.gz binary
+*.png binary
+*.webp binary
+
+# Si l'archive de données grossit ou change souvent, basculez-la en Git LFS :
+#   git lfs install
+#   git lfs track "data/*.sqlite.gz"

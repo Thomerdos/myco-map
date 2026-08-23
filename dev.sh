@@ -37,6 +37,48 @@ precompute() {
   (cd "${ROOT}/backend" && php bin/console app:precompute "$@")
 }
 
+restore_data() {
+  local archive="${ROOT}/data/myco-terrain-100m.sqlite.gz"
+  local target="${ROOT}/backend/var/data/myco.sqlite"
+
+  if [[ ! -f "${archive}" ]]; then
+    echo "Archive introuvable : ${archive}" >&2
+    echo "Lancez ./dev.sh precompute pour générer la base depuis les sources." >&2
+    exit 1
+  fi
+
+  ensure_env
+  mkdir -p "$(dirname "${target}")"
+  rm -f "${target}" "${target}-wal" "${target}-shm"
+
+  # Décompression vers un fichier temporaire : une erreur ne détruit pas la base existante.
+  local temporary
+  temporary="$(mktemp "${target}.XXXXXX")"
+  if ! gunzip -c "${archive}" > "${temporary}"; then
+    rm -f "${temporary}"
+    echo "Décompression échouée, base inchangée." >&2
+    exit 1
+  fi
+  mv "${temporary}" "${target}"
+
+  echo "Base restaurée : ${target} ($(du -h "${target}" | cut -f1))"
+}
+
+export_data() {
+  local source="${ROOT}/backend/var/data/myco.sqlite"
+  local archive="${ROOT}/data/myco-terrain-100m.sqlite.gz"
+
+  if [[ ! -f "${source}" ]]; then
+    echo "Aucune base à exporter. Lancez ./dev.sh precompute d'abord." >&2
+    exit 1
+  fi
+
+  mkdir -p "$(dirname "${archive}")"
+  gzip -c "${source}" > "${archive}"
+  echo "Archive écrite : ${archive} ($(du -h "${archive}" | cut -f1))"
+  command -v sha256sum >/dev/null 2>&1 && sha256sum "${archive}"
+}
+
 backend() {
   ensure_env
   if [[ ! -d "${ROOT}/backend/vendor" ]]; then
@@ -58,10 +100,19 @@ frontend() {
 case "${1:-}" in
   install) install_all ;;
   precompute) shift; precompute "$@" ;;
+  restore-data) restore_data ;;
+  export-data) export_data ;;
   backend) backend ;;
   frontend) frontend ;;
   *)
-    echo "Usage: ./dev.sh [install|precompute|backend|frontend]"
+    echo "Usage: ./dev.sh [install|restore-data|precompute|export-data|backend|frontend]"
+    echo
+    echo "  install       Installe les dépendances PHP et JS"
+    echo "  restore-data  Restaure la base précalculée depuis data/"
+    echo "  precompute    Recalcule la base depuis les sources distantes"
+    echo "  export-data   Réexporte la base vers data/ pour publication"
+    echo "  backend       Démarre l'API sur http://127.0.0.1:8765"
+    echo "  frontend      Démarre l'interface sur http://127.0.0.1:43123"
     exit 1
     ;;
 esac
