@@ -35,6 +35,7 @@ final readonly class CriterionScore
             'label' => $this->criterion->label(),
             'value' => round($this->value, 1),
             'weight' => $this->criterion->weight(),
+            'rationale' => $this->criterion->rationale(),
             'explanation' => $this->explanation,
         ];
     }

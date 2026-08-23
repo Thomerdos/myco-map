@@ -41,7 +41,9 @@ final readonly class WeatherField
             $totalWeight += $weight;
         }
 
-        $trigger = $recent = $fortnight = $temperature = $humidity = $soil = 0.0;
+        $trigger = $recent = $fortnight = $temperature = $humidity = $soil = $soaking = 0.0;
+        $daysWeighted = 0.0;
+        $daysWeight = 0.0;
 
         foreach ($weights as $index => $weight) {
             $share = $weight / $totalWeight;
@@ -52,15 +54,31 @@ final readonly class WeatherField
             $temperature += $conditions->meanTemperatureCelsius * $share;
             $humidity += $conditions->relativeHumidityPercent * $share;
             $soil += $conditions->soilMoisture * $share;
+            $soaking += $conditions->soakingRainMillimetres * $share;
+            if ($conditions->daysSinceSoakingRain !== null) {
+                $daysWeighted += $conditions->daysSinceSoakingRain * $share;
+                $daysWeight += $share;
+            }
         }
 
-        return new WeatherConditions($trigger, $recent, $fortnight, $temperature, $humidity, $soil);
+        return new WeatherConditions(
+            $trigger,
+            $recent,
+            $fortnight,
+            $temperature,
+            $humidity,
+            $soil,
+            $daysWeight > 0 ? (int) round($daysWeighted / $daysWeight) : null,
+            $soaking,
+        );
     }
 
     public function average(): WeatherConditions
     {
         $count = \count($this->samples);
-        $trigger = $recent = $fortnight = $temperature = $humidity = $soil = 0.0;
+        $trigger = $recent = $fortnight = $temperature = $humidity = $soil = $soaking = 0.0;
+        $daysSum = 0;
+        $daysCount = 0;
 
         foreach ($this->samples as $sample) {
             $conditions = $sample['conditions'];
@@ -70,6 +88,11 @@ final readonly class WeatherField
             $temperature += $conditions->meanTemperatureCelsius;
             $humidity += $conditions->relativeHumidityPercent;
             $soil += $conditions->soilMoisture;
+            $soaking += $conditions->soakingRainMillimetres;
+            if ($conditions->daysSinceSoakingRain !== null) {
+                $daysSum += $conditions->daysSinceSoakingRain;
+                $daysCount++;
+            }
         }
 
         return new WeatherConditions(
@@ -79,6 +102,8 @@ final readonly class WeatherField
             $temperature / $count,
             $humidity / $count,
             $soil / $count,
+            $daysCount > 0 ? (int) round($daysSum / $daysCount) : null,
+            $soaking / $count,
         );
     }
 }

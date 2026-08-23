@@ -14,9 +14,12 @@ const activeLayer = ref('potential')
 const activeSpecies = ref('cepe')
 const opacity = ref(0.72)
 const showContours = ref(false)
-const showSpots = ref(true)
+// Listed in the drawer only — numbered pins that recompute on zoom looked like moving clusters.
+const showSpots = ref(false)
 const basemap = ref('topo')
 const selectedPoint = ref<{ lat: number; lng: number } | null>(null)
+const detailOpen = ref(false)
+const controlsOpen = ref(false)
 
 const loadingLayer = ref(false)
 const loadingReport = ref(false)
@@ -29,6 +32,10 @@ let requestToken = 0
 
 const mapCenter = computed(() => context.value?.area.center ?? { lat: 45.19, lng: 5.79 })
 const mapZoom = computed(() => context.value?.area.zoom ?? 11)
+const weatherChip = computed(() => grid.value?.weather ?? null)
+const activeSpeciesMeta = computed(
+  () => context.value?.species.find((item) => item.id === activeSpecies.value) ?? null,
+)
 
 onMounted(async () => {
   try {
@@ -46,10 +53,6 @@ onMounted(async () => {
 
 function onViewportChanged(bounds: Bounds) {
   viewport = bounds
-  scheduleReload()
-}
-
-function scheduleReload() {
   window.clearTimeout(reloadTimer)
   reloadTimer = window.setTimeout(() => {
     if (viewport && context.value?.ready) {
@@ -86,6 +89,7 @@ async function loadLayer(bounds: Bounds) {
 
 async function onLocationPicked(point: { lat: number; lng: number }) {
   selectedPoint.value = point
+  detailOpen.value = true
   loadingReport.value = true
 
   try {
@@ -116,75 +120,131 @@ function onSpeciesChange(species: string) {
 
 <template>
   <div class="shell">
-    <header class="topbar">
-      <div class="brand">
-        <h1>Myco Map</h1>
-        <p>{{ context?.area.name ?? 'Grenoble — Chartreuse, Belledonne, Vercors' }}</p>
-      </div>
-      <div class="status">
-        <span v-if="loadingLayer" class="pill loading">Calcul du masque…</span>
-        <span v-else-if="grid" class="pill">
-          {{ grid.layerLabel }} · maille {{ grid.statistics.resolution }} m
-        </span>
-      </div>
-    </header>
-
-    <p v-if="error" class="banner error">{{ error }}</p>
-    <p v-else-if="notReady" class="banner warning">
-      Les données ne sont pas encore précalculées. Lancez
-      <code>php bin/console app:precompute</code> dans le dossier <code>backend</code>.
-    </p>
-
-    <main class="layout">
-      <ControlPanel
-        :layers="context?.layers ?? []"
-        :species="context?.species ?? []"
-        :active-layer="activeLayer"
-        :active-species="activeSpecies"
+    <div class="map-stage">
+      <MycoMap
+        :grid="grid"
+        :center="mapCenter"
+        :zoom="mapZoom"
         :opacity="opacity"
         :show-contours="showContours"
         :show-spots="showSpots"
         :basemap="basemap"
-        :grid="grid"
-        :loading="loadingLayer"
-        @update:active-layer="onLayerChange"
-        @update:active-species="onSpeciesChange"
-        @update:opacity="opacity = $event"
-        @update:show-contours="showContours = $event"
-        @update:show-spots="showSpots = $event"
-        @update:basemap="basemap = $event"
+        :selected="selectedPoint"
+        @viewport-changed="onViewportChanged"
+        @location-picked="onLocationPicked"
       />
 
-      <section class="map-holder">
-        <MycoMap
-          :grid="grid"
-          :center="mapCenter"
-          :zoom="mapZoom"
+      <header class="top-float">
+        <div class="brand">
+          <strong>Myco Map</strong>
+          <span>{{ context?.area.name ?? 'Grenoble' }}</span>
+        </div>
+
+        <div class="toolbar">
+          <label class="field">
+            <span>Espèce</span>
+            <select
+              :value="activeSpecies"
+              @change="onSpeciesChange(($event.target as HTMLSelectElement).value)"
+            >
+              <option v-for="item in context?.species ?? []" :key="item.id" :value="item.id">
+                {{ item.name }}
+              </option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Masque</span>
+            <select
+              :value="activeLayer"
+              @change="onLayerChange(($event.target as HTMLSelectElement).value)"
+            >
+              <option v-for="layer in context?.layers ?? []" :key="layer.id" :value="layer.id">
+                {{ layer.label }}
+              </option>
+            </select>
+          </label>
+
+          <button type="button" class="ghost" @click="controlsOpen = !controlsOpen">
+            Affichage
+          </button>
+        </div>
+
+        <div class="status-row">
+          <span v-if="loadingLayer" class="chip loading">Calcul…</span>
+          <span v-else-if="weatherChip" class="chip weather">{{ weatherChip.label }}</span>
+          <span
+            v-if="grid?.species"
+            class="chip"
+            :class="grid.species.inSeason ? 'in-season' : 'off-season'"
+          >
+            {{ grid.species.inSeason ? 'En saison' : 'Hors saison' }}
+          </span>
+        </div>
+      </header>
+
+      <aside v-if="controlsOpen" class="controls-float">
+        <ControlPanel
+          :layers="context?.layers ?? []"
+          :species="context?.species ?? []"
+          :active-layer="activeLayer"
+          :active-species="activeSpecies"
           :opacity="opacity"
           :show-contours="showContours"
           :show-spots="showSpots"
           :basemap="basemap"
-          :selected="selectedPoint"
-          @viewport-changed="onViewportChanged"
-          @location-picked="onLocationPicked"
+          :grid="grid"
+          :loading="loadingLayer"
+          @update:active-layer="onLayerChange"
+          @update:active-species="onSpeciesChange"
+          @update:opacity="opacity = $event"
+          @update:show-contours="showContours = $event"
+          @update:show-spots="showSpots = $event"
+          @update:basemap="basemap = $event"
         />
-      </section>
+      </aside>
 
+      <div v-if="grid && !grid.legend.categorical" class="legend-float">
+        <span class="legend-title">{{ grid.legend.title }}</span>
+        <div
+          class="legend-bar"
+          :style="{
+            background: `linear-gradient(to right, ${grid.legend.stops.map((stop) => stop.color).join(', ')})`,
+          }"
+        />
+        <div class="legend-ends">
+          <span>{{ grid.legend.stops[0]?.label }}</span>
+          <span>{{ grid.legend.stops[grid.legend.stops.length - 1]?.label }}</span>
+        </div>
+      </div>
+
+      <p v-if="error" class="banner error">{{ error }}</p>
+      <p v-else-if="notReady" class="banner warning">
+        Données non précalculées — lancez <code>./dev.sh restore-data</code>.
+      </p>
+
+      <p v-if="activeSpeciesMeta" class="hint-float">
+        {{ activeSpeciesMeta.summary }}
+      </p>
+    </div>
+
+    <aside class="detail-drawer" :class="{ open: detailOpen }">
+      <button type="button" class="drawer-close" @click="detailOpen = false">Fermer</button>
       <DetailPanel
         :report="report"
         :highlights="grid?.highlights ?? []"
         :loading="loadingReport"
         @highlight-picked="onLocationPicked"
       />
-    </main>
+    </aside>
   </div>
 </template>
 
 <style>
 :root {
-  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Source Serif 4', 'Libre Baskerville', Georgia, serif;
   color: #2b261f;
-  background: #ece7dc;
+  background: #1a2420;
 }
 
 * {
@@ -198,53 +258,200 @@ body {
 #app {
   min-height: 100vh;
 }
+
+button,
+select,
+input {
+  font: inherit;
+}
 </style>
 
 <style scoped>
 .shell {
+  position: relative;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.map-stage {
+  position: absolute;
+  inset: 0;
+}
+
+.top-float {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  right: 0.75rem;
+  z-index: 1000;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 14px;
+  background: rgb(250 247 240 / 94%);
+  border: 1px solid #d9d0bc;
+  box-shadow: 0 8px 28px rgb(20 30 24 / 18%);
+  backdrop-filter: blur(8px);
+}
+
+.brand {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  min-width: 8rem;
 }
 
-.topbar {
+.brand strong {
+  font-size: 1.05rem;
+  color: #14342a;
+}
+
+.brand span {
+  font-size: 0.72rem;
+  color: #6a6153;
+}
+
+.toolbar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.7rem 1.1rem;
-  background: #14342a;
-  color: #f2efe4;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  flex: 1;
 }
 
-.brand h1 {
-  margin: 0;
-  font-size: 1.15rem;
-  letter-spacing: 0.02em;
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #7d7463;
 }
 
-.brand p {
-  margin: 0.12rem 0 0;
-  font-size: 0.78rem;
-  opacity: 0.82;
+.field select,
+.ghost {
+  padding: 0.35rem 0.55rem;
+  border: 1px solid #cfc6b1;
+  border-radius: 8px;
+  background: #fffdf8;
+  color: #2b261f;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.84rem;
+  cursor: pointer;
 }
 
-.pill {
-  padding: 0.28rem 0.6rem;
+.ghost {
+  align-self: end;
+}
+
+.status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.chip {
+  padding: 0.28rem 0.55rem;
   border-radius: 999px;
-  background: rgb(255 255 255 / 12%);
-  font-size: 0.74rem;
+  background: #e8e1d0;
+  font-size: 0.72rem;
+  color: #3f3a31;
 }
 
-.pill.loading {
+.chip.loading {
   background: #c98a3a;
   color: #2b1c07;
-  font-weight: 600;
+  font-weight: 700;
+}
+
+.chip.weather {
+  background: #14342a;
+  color: #f4f1e6;
+}
+
+.chip.in-season {
+  background: #d6ecd9;
+  color: #1c6b3a;
+}
+
+.chip.off-season {
+  background: #f2e2c4;
+  color: #8a5a12;
+}
+
+.controls-float {
+  position: absolute;
+  top: 5.2rem;
+  left: 0.75rem;
+  z-index: 1000;
+  width: min(300px, calc(100vw - 1.5rem));
+  max-height: calc(100vh - 6.5rem);
+  overflow: auto;
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgb(20 30 24 / 22%);
+}
+
+.legend-float {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 1.4rem;
+  z-index: 900;
+  width: min(240px, calc(100vw - 1.5rem));
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  background: rgb(250 247 240 / 92%);
+  border: 1px solid #d9d0bc;
+}
+
+.legend-title {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6a6153;
+}
+
+.legend-bar {
+  height: 10px;
+  border-radius: 6px;
+  border: 1px solid #cfc6b1;
+}
+
+.legend-ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.25rem;
+  font-size: 0.68rem;
+  color: #7d7463;
+}
+
+.hint-float {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 1.4rem;
+  z-index: 900;
+  max-width: min(320px, calc(100vw - 2rem));
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  background: rgb(20 52 42 / 88%);
+  color: #f4f1e6;
+  font-size: 0.75rem;
+  line-height: 1.4;
 }
 
 .banner {
+  position: absolute;
+  top: 5.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1100;
   margin: 0;
-  padding: 0.55rem 1.1rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: 8px;
   font-size: 0.82rem;
 }
 
@@ -258,54 +465,49 @@ body {
   color: #7a5312;
 }
 
-.banner code {
-  background: rgb(0 0 0 / 8%);
-  padding: 0.05rem 0.3rem;
-  border-radius: 4px;
+.detail-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1200;
+  width: min(360px, 100vw);
+  height: 100%;
+  transform: translateX(105%);
+  transition: transform 0.22s ease;
+  background: #fbf9f3;
+  box-shadow: -8px 0 28px rgb(0 0 0 / 18%);
 }
 
-.layout {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(240px, 288px) 1fr minmax(260px, 340px);
+.detail-drawer.open {
+  transform: translateX(0);
 }
 
-.map-holder {
-  position: relative;
-  min-height: 0;
+.drawer-close {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.55rem;
+  z-index: 2;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid #cfc6b1;
+  border-radius: 7px;
+  background: #fffdf8;
+  cursor: pointer;
+  font-size: 0.78rem;
 }
 
-@media (max-width: 1100px) {
-  .layout {
-    grid-template-columns: minmax(220px, 260px) 1fr;
-  }
-
-  .layout > :last-child {
-    grid-column: 1 / -1;
-    border-left: none;
-    border-top: 1px solid #ded6c4;
-    max-height: 45vh;
-  }
+.detail-drawer :deep(.panel) {
+  height: 100%;
+  border-left: none;
+  padding-top: 2.4rem;
 }
 
-@media (max-width: 760px) {
-  .shell {
-    height: auto;
-    min-height: 100vh;
+@media (max-width: 720px) {
+  .hint-float {
+    display: none;
   }
 
-  .layout {
-    grid-template-columns: 1fr;
-  }
-
-  .map-holder {
-    height: 58vh;
-  }
-
-  .layout > :first-child {
-    border-right: none;
-    border-bottom: 1px solid #ded6c4;
+  .detail-drawer {
+    width: 100vw;
   }
 }
 </style>

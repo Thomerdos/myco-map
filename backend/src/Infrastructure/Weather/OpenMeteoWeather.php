@@ -49,15 +49,19 @@ final readonly class OpenMeteoWeather implements WeatherSource
 
         $samples = [];
         foreach ($payload['samples'] as $sample) {
+            $values = $sample['values'];
+            $daysRaw = $values['daysSinceSoaking'] ?? -1.0;
             $samples[] = [
                 'point' => new Coordinates($sample['lat'], $sample['lng']),
                 'conditions' => new WeatherConditions(
-                    triggerRainMillimetres: $sample['values']['triggerRain'],
-                    recentRainMillimetres: $sample['values']['recentRain'],
-                    fortnightRainMillimetres: $sample['values']['fortnightRain'],
-                    meanTemperatureCelsius: $sample['values']['temperature'],
-                    relativeHumidityPercent: $sample['values']['humidity'],
-                    soilMoisture: $sample['values']['soilMoisture'],
+                    triggerRainMillimetres: $values['triggerRain'],
+                    recentRainMillimetres: $values['recentRain'],
+                    fortnightRainMillimetres: $values['fortnightRain'],
+                    meanTemperatureCelsius: $values['temperature'],
+                    relativeHumidityPercent: $values['humidity'],
+                    soilMoisture: $values['soilMoisture'],
+                    daysSinceSoakingRain: $daysRaw < 0 ? null : (int) $daysRaw,
+                    soakingRainMillimetres: $values['soakingRain'] ?? 0.0,
                 ),
             ];
         }
@@ -135,6 +139,7 @@ final readonly class OpenMeteoWeather implements WeatherSource
     private function aggregate(array $location): array
     {
         $precipitation = array_map('floatval', $location['daily']['precipitation_sum'] ?? []);
+        $dates = array_values(array_map('strval', $location['daily']['time'] ?? []));
         $temperatures = array_values(array_filter(
             $location['daily']['temperature_2m_mean'] ?? [],
             'is_numeric',
@@ -149,7 +154,11 @@ final readonly class OpenMeteoWeather implements WeatherSource
         ));
 
         $dayCount = \count($precipitation);
-        $todayIndex = max(0, $dayCount - 2);
+        $today = (new \DateTimeImmutable('today', new \DateTimeZone('Europe/Paris')))->format('Y-m-d');
+        $todayIndex = array_search($today, $dates, true);
+        if ($todayIndex === false) {
+            $todayIndex = max(0, $dayCount - 2);
+        }
 
         $triggerRain = 0.0;
         $recentRain = 0.0;
@@ -164,6 +173,8 @@ final readonly class OpenMeteoWeather implements WeatherSource
             }
         }
 
+        $soaking = $this->findSoakingEvent($precipitation, (int) $todayIndex);
+
         return [
             'triggerRain' => $triggerRain,
             'recentRain' => $recentRain,
@@ -171,7 +182,51 @@ final readonly class OpenMeteoWeather implements WeatherSource
             'temperature' => $this->mean(\array_slice($temperatures, -10)) ?? 12.0,
             'humidity' => $this->mean(\array_slice($humidity, -72)) ?? 70.0,
             'soilMoisture' => $this->mean(\array_slice($soilMoisture, -48)) ?? 0.3,
+            'daysSinceSoaking' => $soaking['daysSince'] ?? -1.0,
+            'soakingRain' => $soaking['millimetres'],
         ];
+    }
+
+    /**
+     * Last marked rainy spell: a day ≥ 10 mm expanded to neighbouring wet days.
+     * Fruiting clocks start at the *end* of that spell, not at its first shower.
+     *
+     * @param list<float> $precipitation
+     * @return array{daysSince: ?float, millimetres: float}
+     */
+    private function findSoakingEvent(array $precipitation, int $todayIndex): array
+    {
+        for ($cursor = $todayIndex; $cursor >= 0; $cursor--) {
+            if ($precipitation[$cursor] < 10.0) {
+                continue;
+            }
+
+            $start = $cursor;
+            while ($start > 0 && $precipitation[$start - 1] >= 5.0) {
+                --$start;
+            }
+
+            $end = $cursor;
+            while ($end < $todayIndex && $precipitation[$end + 1] >= 5.0) {
+                ++$end;
+            }
+
+            $millimetres = 0.0;
+            for ($day = $start; $day <= $end; $day++) {
+                $millimetres += $precipitation[$day];
+            }
+
+            if ($millimetres < 15.0) {
+                continue;
+            }
+
+            return [
+                'daysSince' => (float) ($todayIndex - $end),
+                'millimetres' => $millimetres,
+            ];
+        }
+
+        return ['daysSince' => null, 'millimetres' => 0.0];
     }
 
     /** @param list<float|int|string> $values */

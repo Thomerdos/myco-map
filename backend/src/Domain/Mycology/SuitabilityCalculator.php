@@ -24,7 +24,7 @@ final readonly class SuitabilityCalculator
         SeasonAssessment $season,
     ): float {
         $total = $season->criterionScore->weighted()
-            + $this->weatherValue($weather) * Criterion::Weather->weight()
+            + $this->weatherValue($species, $weather) * Criterion::Weather->weight()
             + $this->altitudeValue($species, $terrain) * Criterion::Altitude->weight()
             + $this->exposureValue($species, $terrain) * Criterion::Exposure->weight()
             + $this->coverValue($species, $terrain) * Criterion::Cover->weight()
@@ -45,8 +45,8 @@ final readonly class SuitabilityCalculator
             $season->criterionScore,
             new CriterionScore(
                 Criterion::Weather,
-                $this->weatherValue($weather),
-                $this->explainWeather($weather),
+                $this->weatherValue($species, $weather),
+                $this->explainWeather($species, $weather),
             ),
             new CriterionScore(
                 Criterion::Altitude,
@@ -76,7 +76,7 @@ final readonly class SuitabilityCalculator
             new CriterionScore(
                 Criterion::Slope,
                 $this->slopeValue($species, $terrain),
-                sprintf('Pente de %.0f°', $terrain->slopeDegrees),
+                $this->explainSlope($species, $terrain),
             ),
         ];
 
@@ -111,18 +111,20 @@ final readonly class SuitabilityCalculator
         return max(0.0, min(100.0, $total));
     }
 
-    private function weatherValue(WeatherConditions $weather): float
+    /**
+     * Weather score is dominated by flush phenology: a soaking rain is necessary but
+     * fruitbodies lag behind it. Temperature and litter moisture only modulate once
+     * the clock since that rain is in the species' fruiting window.
+     */
+    private function weatherValue(Species $species, WeatherConditions $weather): float
     {
-        $trigger = match (true) {
-            $weather->triggerRainMillimetres >= 45 => 100.0,
-            $weather->triggerRainMillimetres >= 30 => 88.0,
-            $weather->triggerRainMillimetres >= 20 => 72.0,
-            $weather->triggerRainMillimetres >= 12 => 55.0,
-            $weather->triggerRainMillimetres >= 6 => 35.0,
-            default => 12.0,
-        };
+        $phenology = $this->flushPhenology($species, $weather);
+        $eventStrength = $this->soakingStrength($weather);
 
         $recent = match (true) {
+            $weather->daysSinceSoakingRain !== null && $weather->daysSinceSoakingRain <= 3
+                => 40.0, // the soaking itself is still falling in the "recent" bucket — do not treat it as ideal litter rain
+            $weather->recentRainMillimetres >= 40 => 55.0,
             $weather->recentRainMillimetres >= 25 => 70.0,
             $weather->recentRainMillimetres >= 4 => 100.0,
             $weather->recentRainMillimetres >= 1 => 80.0,
@@ -140,7 +142,57 @@ final readonly class SuitabilityCalculator
 
         $humidity = min(100.0, max(20.0, ($weather->relativeHumidityPercent - 45) * 2.2));
 
-        return $trigger * 0.46 + $recent * 0.20 + $temperature * 0.22 + $humidity * 0.12;
+        // Phenology × event strength is the gate; ambient conditions only fine-tune.
+        return $phenology * ($eventStrength / 100.0) * 0.58
+            + $recent * 0.14
+            + $temperature * 0.18
+            + $humidity * 0.10;
+    }
+
+    private function soakingStrength(WeatherConditions $weather): float
+    {
+        $mm = max($weather->soakingRainMillimetres, $weather->triggerRainMillimetres);
+
+        return match (true) {
+            $mm >= 45 => 100.0,
+            $mm >= 30 => 90.0,
+            $mm >= 20 => 78.0,
+            $mm >= 15 => 62.0,
+            $mm >= 10 => 40.0,
+            default => 18.0,
+        };
+    }
+
+    /**
+     * Readiness of fruitbodies given days since the end of the last soaking spell.
+     * Peaks around {@see Species::$flushDelayPeakDays}; near zero for the first days.
+     */
+    private function flushPhenology(Species $species, WeatherConditions $weather): float
+    {
+        $days = $weather->daysSinceSoakingRain;
+        if ($days === null || $weather->soakingRainMillimetres < 15.0) {
+            // No clear soaking event: leftover humidity may allow scraps, not a flush.
+            return $weather->fortnightRainMillimetres >= 20.0 ? 22.0 : 10.0;
+        }
+
+        $min = $species->flushDelayMinDays;
+        $peak = $species->flushDelayPeakDays;
+        $max = $species->flushDelayMaxDays;
+
+        if ($days <= 2) {
+            return 8.0;
+        }
+        if ($days < $min) {
+            return 8.0 + (32.0 - 8.0) * ($days - 2) / max(1, $min - 2);
+        }
+        if ($days <= $peak) {
+            return 32.0 + (100.0 - 32.0) * ($days - $min) / max(1, $peak - $min);
+        }
+        if ($days <= $max) {
+            return 100.0 - 40.0 * ($days - $peak) / max(1, $max - $peak);
+        }
+
+        return max(12.0, 60.0 - ($days - $max) * 5.0);
     }
 
     private function altitudeValue(Species $species, TerrainProfile $terrain): float
@@ -188,14 +240,71 @@ final readonly class SuitabilityCalculator
         return $species->slope->suitability($terrain->slopeDegrees) * 100;
     }
 
-    private function explainWeather(WeatherConditions $weather): string
+    private function explainWeather(Species $species, WeatherConditions $weather): string
     {
+        if ($weather->daysSinceSoakingRain === null || $weather->soakingRainMillimetres < 15.0) {
+            return sprintf(
+                'Pas d\'épisode marquant récent (%.0f mm sur 15 j). Sans pluie déclenchante, la pousse reste improbable — %.1f °C',
+                $weather->fortnightRainMillimetres,
+                $weather->meanTemperatureCelsius,
+            );
+        }
+
+        $days = $weather->daysSinceSoakingRain;
+        $phase = match (true) {
+            $days <= 3 => sprintf(
+                'il y a %d j seulement : le mycélium démarre, trop tôt pour trouver des carpophores (pic attendu vers J+%d pour %s)',
+                $days,
+                $species->flushDelayPeakDays,
+                lcfirst($species->commonName),
+            ),
+            $days < $species->flushDelayMinDays => sprintf(
+                'il y a %d j : incubation en cours, premières sorties possibles à partir de J+%d',
+                $days,
+                $species->flushDelayMinDays,
+            ),
+            $days <= $species->flushDelayPeakDays => sprintf(
+                'il y a %d j : dans la fenêtre de pousse (idéal vers J+%d)',
+                $days,
+                $species->flushDelayPeakDays,
+            ),
+            $days <= $species->flushDelayMaxDays => sprintf(
+                'il y a %d j : fin de la poussée liée à cet épisode (fenêtre jusqu\'à J+%d)',
+                $days,
+                $species->flushDelayMaxDays,
+            ),
+            default => sprintf(
+                'il y a %d j : la poussée de cet épisode est largement derrière nous',
+                $days,
+            ),
+        };
+
         return sprintf(
-            '%.0f mm de pluie déclenchante (J-14 à J-5), %.0f mm ces 5 derniers jours, %.1f °C de moyenne',
-            $weather->triggerRainMillimetres,
+            'Épisode de %.0f mm %s · %.0f mm sur les 5 derniers jours, %.1f °C',
+            $weather->soakingRainMillimetres,
+            $phase,
             $weather->recentRainMillimetres,
             $weather->meanTemperatureCelsius,
         );
+    }
+
+    private function explainSlope(Species $species, TerrainProfile $terrain): string
+    {
+        $slope = $terrain->slopeDegrees;
+        $band = $species->slope;
+        $reading = match (true) {
+            $slope < 2.0 => 'presque plat : litière souvent compactée ou gorgée après pluie',
+            $slope >= $band->optimumLow && $slope <= $band->optimumHigh => sprintf(
+                'dans la plage favorable (%.0f–%.0f°) : litière stable, bon drainage de surface',
+                $band->optimumLow,
+                $band->optimumHigh,
+            ),
+            $slope > $band->maximum => 'trop raide : lessivage fort, peu de litière utile',
+            $slope > $band->optimumHigh => 'un peu trop pentu : la matière organique et l\'eau dévalent plus vite',
+            default => 'légèrement trop faible : drainage moins franc qu\'à l\'optimum',
+        };
+
+        return sprintf('Pente de %.0f° — %s', $slope, $reading);
     }
 
     private function explainAltitude(Species $species, TerrainProfile $terrain): string

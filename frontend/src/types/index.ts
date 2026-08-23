@@ -75,6 +75,8 @@ export interface Weather {
   temperature: number
   humidity: number
   soilMoisture: number
+  daysSinceSoakingRain: number | null
+  soakingRain: number
   label: string
   degraded?: boolean
 }
@@ -126,6 +128,7 @@ export interface CriterionDetail {
   label: string
   value: number
   weight: number
+  rationale: string
   explanation: string
 }
 
