@@ -25,13 +25,13 @@ jobs:
           path: ~/.composer/cache
           key: composer-${{ hashFiles('backend/composer.lock') }}
 
-      - name: Installer les dépendances
-        working-directory: backend
-        run: composer install --no-interaction --no-progress
-
       - name: Préparer la configuration
         working-directory: backend
         run: cp .env.example .env
+
+      - name: Installer les dépendances
+        working-directory: backend
+        run: composer install --no-interaction --no-progress
 
       - name: Vérifier le conteneur de services
         working-directory: backend
