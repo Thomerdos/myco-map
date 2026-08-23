@@ -30,7 +30,7 @@ frontend() {
 }
 
 install_all() {
-  cd "${ROOT}/backend" && php "${COMPOSER}" install --no-interaction
+  cd "${ROOT}/backend" && "${COMPOSER[@]}" install --no-interaction
   cd "${ROOT}/frontend" && npm install
 }
 
