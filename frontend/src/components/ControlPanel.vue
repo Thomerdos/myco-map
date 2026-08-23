@@ -9,6 +9,7 @@ const props = defineProps<{
   activeSpecies: string
   opacity: number
   showContours: boolean
+  showSpots: boolean
   basemap: string
   grid: LayerGrid | null
   loading: boolean
@@ -19,6 +20,7 @@ const emit = defineEmits<{
   'update:activeSpecies': [value: string]
   'update:opacity': [value: number]
   'update:showContours': [value: boolean]
+  'update:showSpots': [value: boolean]
   'update:basemap': [value: string]
 }>()
 
@@ -115,6 +117,14 @@ const BASEMAP_LABELS: Record<string, string> = {
           @change="emit('update:showContours', ($event.target as HTMLInputElement).checked)"
         />
         <span>Lignes de niveau des zones</span>
+      </label>
+      <label class="control checkbox">
+        <input
+          type="checkbox"
+          :checked="props.showSpots"
+          @change="emit('update:showSpots', ($event.target as HTMLInputElement).checked)"
+        />
+        <span>Repères des meilleurs secteurs</span>
       </label>
       <div class="basemap-row">
         <button
