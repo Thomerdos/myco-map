@@ -11,13 +11,20 @@ final readonly class LayerLegendFactory
     public function create(MapLayer $layer): LayerLegend
     {
         return match ($layer) {
+            // Weather and season account for 38 % of the score and are near-uniform across a
+            // viewport, so in a good spell every forested cell starts high and a scale spread
+            // evenly over 0–100 paints the whole massif in one colour. The stops below are
+            // spaced on the upper half of the range, where the terrain actually discriminates,
+            // and the ramp deliberately avoids green: the basemap is already green, so warm
+            // tones are what make a promising slope readable against the forest.
             MapLayer::Potential => new LayerLegend($layer->label(), null, false, [
-                ['value' => 0, 'label' => 'À éviter', 'color' => '#3b3f4a'],
-                ['value' => 25, 'label' => 'Faible', 'color' => '#8d6e4a'],
-                ['value' => 45, 'label' => 'Moyen', 'color' => '#d8b845'],
-                ['value' => 62, 'label' => 'Prometteur', 'color' => '#79b03a'],
-                ['value' => 78, 'label' => 'Très prometteur', 'color' => '#1c7a3e'],
-            ]),
+                ['value' => 0, 'label' => 'À éviter', 'color' => '#242733'],
+                ['value' => 45, 'label' => 'Faible', 'color' => '#3f3f6b'],
+                ['value' => 64, 'label' => 'Moyen', 'color' => '#6f4a78'],
+                ['value' => 78, 'label' => 'Prometteur', 'color' => '#b3556a'],
+                ['value' => 87, 'label' => 'Très prometteur', 'color' => '#ef8b3c'],
+                ['value' => 94, 'label' => 'Exceptionnel', 'color' => '#ffe473'],
+            ], true),
             MapLayer::Elevation => new LayerLegend($layer->label(), 'm', false, [
                 ['value' => 200, 'label' => '200 m', 'color' => '#1a6b3c'],
                 ['value' => 700, 'label' => '700 m', 'color' => '#8fbf4a'],
