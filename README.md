@@ -162,7 +162,7 @@ Le modèle gagne surtout à être confronté au terrain :
 1. Sélectionnez l'espèce, placez-vous sur un secteur que vous connaissez et cliquez dessus.
 2. Comparez le score et la décomposition par critère à ce que vous observez réellement.
 3. Les profils d'espèces sont regroupés dans `backend/src/Infrastructure/Mycology/InMemorySpeciesCatalog.php` : tranches d'altitude, préférence de fraîcheur, affinités de couvert, rapport à la lisière et à l'humidité s'y ajustent directement.
-4. Les poids des critères sont dans `backend/src/Domain/Mycology/Criterion.php`.
+4. Les poids des critères sont dans `backend/src/Domain/Mycology/Criterion.php`. Leur justification, les sources scientifiques qui les appuient et les divergences connues avec la littérature sont documentées dans [`AGENTS.md`](AGENTS.md).
 
 ## Licence et attribution
 
