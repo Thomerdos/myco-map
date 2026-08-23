@@ -77,6 +77,8 @@ export interface Weather {
   soilMoisture: number
   daysSinceSoakingRain: number | null
   soakingRain: number
+  accumulatedRain: number
+  brokeDrySpell: boolean
   label: string
   degraded?: boolean
 }

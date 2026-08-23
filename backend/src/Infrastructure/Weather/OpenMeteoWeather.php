@@ -24,6 +24,17 @@ final readonly class OpenMeteoWeather implements WeatherSource
     private const TRIGGER_WINDOW_START = -14;
     private const TRIGGER_WINDOW_END = -5;
     private const RECENT_WINDOW_START = -4;
+    private const FORTNIGHT_WINDOW_START = -13;
+
+    /** Published fruiting models relate yield to rain accumulated over roughly four weeks. */
+    private const ACCUMULATION_WINDOW_START = -25;
+
+    /** The fortnight before the trigger window, to tell a drought-breaking spell apart. */
+    private const PRECEDING_WINDOW_START = -29;
+    private const PRECEDING_WINDOW_END = -15;
+
+    /** Enough history to cover {@see PRECEDING_WINDOW_START} plus a safety margin. */
+    private const PAST_DAYS = 31;
 
     public function __construct(
         private HttpClientInterface $httpClient,
@@ -62,6 +73,8 @@ final readonly class OpenMeteoWeather implements WeatherSource
                     soilMoisture: $values['soilMoisture'],
                     daysSinceSoakingRain: $daysRaw < 0 ? null : (int) $daysRaw,
                     soakingRainMillimetres: $values['soakingRain'] ?? 0.0,
+                    accumulatedRainMillimetres: $values['accumulatedRain'] ?? 0.0,
+                    precedingDryMillimetres: $values['precedingRain'] ?? 0.0,
                 ),
             ];
         }
@@ -95,7 +108,7 @@ final readonly class OpenMeteoWeather implements WeatherSource
                     'longitude' => implode(',', $longitudes),
                     'daily' => 'precipitation_sum,temperature_2m_mean',
                     'hourly' => 'relative_humidity_2m,soil_moisture_0_to_1cm',
-                    'past_days' => 15,
+                    'past_days' => self::PAST_DAYS,
                     'forecast_days' => 1,
                     'timezone' => 'Europe/Paris',
                 ],
@@ -162,14 +175,29 @@ final readonly class OpenMeteoWeather implements WeatherSource
 
         $triggerRain = 0.0;
         $recentRain = 0.0;
+        $fortnightRain = 0.0;
+        $accumulatedRain = 0.0;
+        $precedingRain = 0.0;
 
         for ($day = 0; $day < $dayCount; $day++) {
             $offset = $day - $todayIndex;
+            if ($offset > 0) {
+                continue;
+            }
             if ($offset >= self::TRIGGER_WINDOW_START && $offset <= self::TRIGGER_WINDOW_END) {
                 $triggerRain += $precipitation[$day];
             }
-            if ($offset >= self::RECENT_WINDOW_START && $offset <= 0) {
+            if ($offset >= self::RECENT_WINDOW_START) {
                 $recentRain += $precipitation[$day];
+            }
+            if ($offset >= self::FORTNIGHT_WINDOW_START) {
+                $fortnightRain += $precipitation[$day];
+            }
+            if ($offset >= self::ACCUMULATION_WINDOW_START) {
+                $accumulatedRain += $precipitation[$day];
+            }
+            if ($offset >= self::PRECEDING_WINDOW_START && $offset <= self::PRECEDING_WINDOW_END) {
+                $precedingRain += $precipitation[$day];
             }
         }
 
@@ -178,7 +206,9 @@ final readonly class OpenMeteoWeather implements WeatherSource
         return [
             'triggerRain' => $triggerRain,
             'recentRain' => $recentRain,
-            'fortnightRain' => array_sum($precipitation),
+            'fortnightRain' => $fortnightRain,
+            'accumulatedRain' => $accumulatedRain,
+            'precedingRain' => $precedingRain,
             'temperature' => $this->mean(\array_slice($temperatures, -10)) ?? 12.0,
             'humidity' => $this->mean(\array_slice($humidity, -72)) ?? 70.0,
             'soilMoisture' => $this->mean(\array_slice($soilMoisture, -48)) ?? 0.3,
@@ -252,6 +282,8 @@ final readonly class OpenMeteoWeather implements WeatherSource
                     'triggerRain' => 18.0,
                     'recentRain' => 4.0,
                     'fortnightRain' => 28.0,
+                    'accumulatedRain' => 45.0,
+                    'precedingRain' => 20.0,
                     'temperature' => 12.5,
                     'humidity' => 72.0,
                     'soilMoisture' => 0.3,

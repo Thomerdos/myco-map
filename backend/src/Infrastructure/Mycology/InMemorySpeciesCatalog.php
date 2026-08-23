@@ -61,7 +61,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     new HarvestWindow('06-01', '07-20', false, 'Poussée d\'été en altitude après les orages'),
                 ],
                 altitude: new AltitudeBand(350, 700, 1500, 1850),
-                slope: new SlopeBand(3, 25),
+                slope: new SlopeBand(25),
                 coolPreference: 0.68,
                 coverAffinity: [
                     ForestCover::Broadleaf->value => 0.95,
@@ -86,7 +86,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     new HarvestWindow('08-20', '11-30', true, 'Fin août à fin novembre, pic septembre-octobre'),
                 ],
                 altitude: new AltitudeBand(300, 600, 1300, 1600),
-                slope: new SlopeBand(0, 22),
+                slope: new SlopeBand(22),
                 coolPreference: 0.85,
                 coverAffinity: [
                     ForestCover::Broadleaf->value => 0.98,
@@ -109,7 +109,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     new HarvestWindow('12-01', '12-20', false, 'Chanterelle en tube jusqu\'aux premières gelées'),
                 ],
                 altitude: new AltitudeBand(350, 700, 1700, 2000),
-                slope: new SlopeBand(2, 28),
+                slope: new SlopeBand(28),
                 coolPreference: 0.76,
                 coverAffinity: [
                     ForestCover::Mixed->value => 0.95,
@@ -125,13 +125,13 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 id: 'girolle',
                 commonName: 'Girolle',
                 scientificName: 'Cantharellus cibarius',
-                summary: 'La girolle vraie, souvent alignée le long des talus et des sentiers, sur sol acide et moussu. Réagit vite aux orages d\'été, y compris en lisière de pessière.',
+                summary: 'La girolle vraie, souvent alignée le long des talus et des sentiers, sur sol acide et moussu. Réagit vite aux orages d\'été. Les talus qui la portent sont des micro-lisières internes, pas des bordures de massif.',
                 hostTrees: 'Hêtre, chêne, châtaignier, épicéa',
                 harvestWindows: [
                     new HarvestWindow('06-01', '10-31', true, 'Juin à octobre, pic juillet-septembre'),
                 ],
                 altitude: new AltitudeBand(350, 650, 1600, 1900),
-                slope: new SlopeBand(3, 30),
+                slope: new SlopeBand(30),
                 coolPreference: 0.70,
                 coverAffinity: [
                     ForestCover::Mixed->value => 0.95,
@@ -140,7 +140,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     ForestCover::Undetermined->value => 0.68,
                     ForestCover::Open->value => 0.08,
                 ],
-                edgeAffinity: EdgeAffinity::Edge,
+                edgeAffinity: EdgeAffinity::Indifferent,
                 moisturePreference: 0.75,
                 flushDelayMinDays: 5,
                 flushDelayPeakDays: 8,
@@ -156,7 +156,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     new HarvestWindow('08-20', '12-15', true, 'Fin août à mi-décembre, pic octobre-novembre'),
                 ],
                 altitude: new AltitudeBand(350, 700, 1600, 1900),
-                slope: new SlopeBand(2, 28),
+                slope: new SlopeBand(28),
                 coolPreference: 0.80,
                 coverAffinity: [
                     ForestCover::Conifer->value => 0.95,
@@ -178,7 +178,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     new HarvestWindow('03-10', '05-31', true, 'Mi-mars à fin mai, pic avril'),
                 ],
                 altitude: new AltitudeBand(180, 300, 1100, 1500),
-                slope: new SlopeBand(0, 20),
+                slope: new SlopeBand(20),
                 coolPreference: 0.28,
                 coverAffinity: [
                     ForestCover::Broadleaf->value => 0.88,

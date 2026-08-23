@@ -14,6 +14,15 @@ namespace App\Domain\Weather;
  */
 final readonly class WeatherConditions
 {
+    /**
+     * @param float $accumulatedRainMillimetres total over the last 26 days: daily monitoring of
+     *                                          Boletus edulis finds fruiting rises with rain
+     *                                          accumulated over roughly that window, well beyond
+     *                                          the single triggering spell
+     * @param float $precedingDryMillimetres    rain over the fortnight *before* the trigger
+     *                                          window, used to detect a drought broken by the
+     *                                          spell — those events fruit best
+     */
     public function __construct(
         public float $triggerRainMillimetres,
         public float $recentRainMillimetres,
@@ -23,7 +32,18 @@ final readonly class WeatherConditions
         public float $soilMoisture,
         public ?int $daysSinceSoakingRain = null,
         public float $soakingRainMillimetres = 0.0,
+        public float $accumulatedRainMillimetres = 0.0,
+        public float $precedingDryMillimetres = 0.0,
     ) {
+    }
+
+    /**
+     * A marked spell that ends a dry fortnight produces more than the same rain falling on
+     * already-wet ground.
+     */
+    public function brokeDrySpell(): bool
+    {
+        return $this->precedingDryMillimetres < 10.0 && $this->soakingRainMillimetres >= 20.0;
     }
 
     public function label(): string
@@ -41,7 +61,7 @@ final readonly class WeatherConditions
         };
     }
 
-    /** @return array<string, float|int|string|null> */
+    /** @return array<string, float|int|bool|string|null> */
     public function toArray(): array
     {
         return [
@@ -53,6 +73,8 @@ final readonly class WeatherConditions
             'soilMoisture' => round($this->soilMoisture, 3),
             'daysSinceSoakingRain' => $this->daysSinceSoakingRain,
             'soakingRain' => round($this->soakingRainMillimetres, 1),
+            'accumulatedRain' => round($this->accumulatedRainMillimetres, 1),
+            'brokeDrySpell' => $this->brokeDrySpell(),
             'label' => $this->label(),
         ];
     }
