@@ -12,6 +12,7 @@
 | `slope`, `aspect` | Pente et exposition en degrés (Horn) |
 | `curvature` | Laplacien, positif en terrain concave |
 | `cover` | Couvert forestier : 0 hors forêt, 1 indéterminé, 2 feuillus, 3 conifères, 4 mixte |
+| | Cette archive est calculée sur OpenStreetMap. Un précalcul avec BD Forêt V2 (voir le README principal) remplit le même champ avec des essences bien plus fiables. |
 | `edge_distance` | Distance signée à la lisière, positive dans le boisement |
 | `water_distance` | Distance au cours d'eau le plus proche |
 | `grid_definition` | Emprise, taille de maille, dimensions, date de calcul |

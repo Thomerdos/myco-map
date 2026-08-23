@@ -79,6 +79,49 @@ export_data() {
   command -v sha256sum >/dev/null 2>&1 && sha256sum "${archive}"
 }
 
+# Converts IGN BD Forêt V2 deliveries into the newline-delimited WGS84 GeoJSON the
+# BdForetLandCover adapter streams. Accepts the shapefiles or GeoPackages of one or more
+# départements; IGN ships Lambert-93, hence the reprojection.
+bdforet() {
+  local target="${ROOT}/backend/var/bdforet/formation-vegetale.geojsonl"
+
+  if [[ $# -eq 0 ]]; then
+    echo "Usage: ./dev.sh bdforet <FORMATION_VEGETALE.shp|.gpkg> [autres départements...]" >&2
+    echo >&2
+    echo "Téléchargez BD Forêt V2 par département sur https://geoservices.ign.fr/bdforet" >&2
+    echo "(gratuit, Licence Ouverte). Pour cette zone : Isère, plus Drôme et Savoie" >&2
+    echo "si vous voulez couvrir les franges du Vercors et de Belledonne." >&2
+    exit 1
+  fi
+
+  if ! command -v ogr2ogr >/dev/null 2>&1; then
+    echo "ogr2ogr est requis pour la conversion. Installez GDAL :" >&2
+    echo "  Debian/Ubuntu : sudo apt install gdal-bin" >&2
+    echo "  macOS         : brew install gdal" >&2
+    exit 1
+  fi
+
+  mkdir -p "$(dirname "${target}")"
+  rm -f "${target}"
+
+  local source
+  for source in "$@"; do
+    if [[ ! -e "${source}" ]]; then
+      echo "Introuvable : ${source}" >&2
+      exit 1
+    fi
+    echo "Conversion de ${source}…"
+    # -append accumule les départements dans un seul flux ; -t_srs reprojette en WGS84.
+    ogr2ogr -f GeoJSONSeq -append -t_srs EPSG:4326 \
+      -select CODE_TFV \
+      -nlt PROMOTE_TO_MULTI \
+      "${target}" "${source}"
+  done
+
+  echo "BD Forêt prête : ${target} ($(du -h "${target}" | cut -f1), $(wc -l < "${target}") polygones)"
+  echo "Relancez ./dev.sh precompute pour reconstruire la base avec ce couvert."
+}
+
 backend() {
   ensure_env
   if [[ ! -d "${ROOT}/backend/vendor" ]]; then
@@ -102,15 +145,17 @@ case "${1:-}" in
   precompute) shift; precompute "$@" ;;
   restore-data) restore_data ;;
   export-data) export_data ;;
+  bdforet) shift; bdforet "$@" ;;
   backend) backend ;;
   frontend) frontend ;;
   *)
-    echo "Usage: ./dev.sh [install|restore-data|precompute|export-data|backend|frontend]"
+    echo "Usage: ./dev.sh [install|restore-data|precompute|export-data|bdforet|backend|frontend]"
     echo
     echo "  install       Installe les dépendances PHP et JS"
     echo "  restore-data  Restaure la base précalculée depuis data/"
     echo "  precompute    Recalcule la base depuis les sources distantes"
     echo "  export-data   Réexporte la base vers data/ pour publication"
+    echo "  bdforet       Convertit BD Forêt V2 pour un couvert forestier précis"
     echo "  backend       Démarre l'API sur http://127.0.0.1:8765"
     echo "  frontend      Démarre l'interface sur http://127.0.0.1:43123"
     exit 1

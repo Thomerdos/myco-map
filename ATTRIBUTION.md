@@ -12,6 +12,21 @@ Le fichier `data/myco-terrain-100m.sqlite.gz` intègre des données OSM rasteris
 - **Partage à l'identique** : si vous redistribuez cette base ou une base qui en dérive, vous devez la publier sous ODbL.
 - **Produits dérivés** : les images de carte produites à partir de la base peuvent être diffusées sous la licence de votre choix, à condition de mentionner la source et de préciser où obtenir la base sous ODbL.
 
+## IGN BD Forêt® V2 — couvert forestier (optionnel)
+
+Utilisée seulement si vous la téléchargez vous-même puis lancez `./dev.sh bdforet` : elle
+**n'est pas redistribuée** par ce dépôt, et la base précalculée de `data/` est construite sur
+OpenStreetMap.
+
+BD Forêt® V2 est diffusée par l'[IGN](https://geoservices.ign.fr/bdforet) sous
+[Licence Ouverte 2.0](https://www.etalab.gouv.fr/licence-ouverte-open-licence/), qui demande la
+mention de la source :
+
+> Source : IGN — BD Forêt® version 2.0
+
+Si vous republiez une base qui mélange BD Forêt et des données OSM (lisières, hydrographie),
+l'ODbL de la section précédente continue de s'appliquer à l'ensemble.
+
 ## AWS Terrain Tiles — relief
 
 Jeu de données [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) du programme AWS Open Data, héritier du projet Mapzen. Il agrège plusieurs sources selon la zone ; pour les Alpes françaises il s'appuie principalement sur le SRTM de la NASA et sur des levés nationaux.

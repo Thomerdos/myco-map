@@ -54,60 +54,83 @@ de la plage (`LayerLegendFactory`).
 | Seuil d'épisode déclenchant | ≥ 15 mm cumulés, jour pivot ≥ 10 mm | Calibration interne, pas de source directe |
 | Fenêtre déclenchante | J−14 → J−5 | **Plus courte que la littérature** : décalage d'un mois pour la pluie ([Karavani et al. 2018](https://www.medfor.eu/sites/default/files/editor/karavani_et_al_final.pdf)), accumulation sur 26 j ([étude 2025](https://doi.org/10.64898/2025.12.12.693895)), température minimale deux semaines plus tôt ([Martínez-Peña 2004](https://oa.upm.es/48556/1/Martinez_2004_CuadSECF.pdf)) |
 
-## Divergences connues avec la littérature
+## Divergences avec la littérature
 
-À traiter ou à assumer explicitement, pas à oublier :
+### Corrigées
 
-1. **Forme de la courbe de pente.** `SlopeBand` donne un plateau à 1,0 entre `optimumLow` et
-   `optimumHigh` et pénalise le plat. La littérature décrit un effet **négatif monotone** de la
-   pente, sans bonus pour les pentes moyennes. La pénalité du plat repose sur un raisonnement
-   physique (litière compactée ou gorgée) non sourcé.
-2. **`EdgeAffinity::Edge` pour la girolle.** Contraire au signal ectomycorhizien général
-   (fructification réduite en lisière). L'observation de terrain porte sur des **micro-lisières**
-   (talus de sentier, bord de piste), pas sur la lisière de massif que mesure `edgeDistance`.
-   Ambiguïté à lever.
-3. **`soilMoisture` récupéré mais jamais noté.** Open-Meteo fournit
-   `soil_moisture_0_to_1cm`, exposé dans l'API, absent du calcul — alors que c'est un
-   prédicteur aussi fort que la pluie.
-4. **Densité du peuplement absente.** La surface terrière est la variable de peuplement la plus
-   citée, avec un optimum autour de 15–20 m²/ha. Rien d'équivalent n'est modélisé (OSM ne le
-   donne pas ; piste : NDVI Sentinel-2 ou BD Forêt V2).
-5. **Sol et pH absents.** Comptent pour la trompette (calcaire) et la morille.
-6. **Pas d'amorçage par sécheresse.** Un épisode marqué après une longue période sèche est plus
-   productif ; le modèle traite tous les épisodes de même cumul à l'identique.
+1. **Forme de la courbe de pente.** `SlopeBand` est désormais **monotone décroissante** :
+   `toleratedUpTo` marque la fin de la plage bien supportée, pas un optimum, et le plat n'est plus
+   pénalisé. Les suivis de récolte ne montrent aucun bonus aux angles intermédiaires.
+2. **Pénalité de lisière.** `EdgeAffinity::Indifferent` n'est plus neutre à l'intérieur du
+   boisement : la bande de lisière est pénalisée (0,6 au contact, plateau à 120 m), car la
+   fructification y chute nettement. La girolle est repassée en `Indifferent` — ses talus sont des
+   micro-lisières internes, pas des bordures de massif. `Edge` est réservé aux espèces liées aux
+   sols remaniés (morille).
+3. **`soilMoisture` utilisé.** Il compte pour 12 % du score météo via `soilMoistureValue()`,
+   optimum volumétrique 0,24–0,42 m³/m³.
+4. **Fenêtre d'accumulation.** L'historique Open-Meteo passe à 31 jours, ce qui donne
+   `accumulatedRainMillimetres` (26 j, relation quasi linéaire avec la fructification) et
+   `precedingDryMillimetres`. `waterSupply()` combine épisode déclenchant (65 %) et accumulation
+   (35 %).
+5. **Amorçage par sécheresse.** `WeatherConditions::brokeDrySpell()` détecte un épisode ≥ 20 mm
+   après une quinzaine à moins de 10 mm et majore l'apport en eau de 15 %.
+
+### Restantes
+
+1. **Densité et fermeture du couvert absentes.** La surface terrière est la variable de peuplement
+   la plus corrélée aux récoltes, avec un optimum vers 15–20 m²/ha. BD Forêt distingue déjà forêt
+   fermée (`FF`) et ouverte (`FO`), information que `ForestCover` ne peut pas porter aujourd'hui :
+   l'ajouter voudrait dire élargir l'enum, donc toucher au schéma SQLite, à la légende et aux
+   affinités d'espèces. Piste complémentaire : NDVI Sentinel-2.
+2. **Sol et pH absents.** Comptent pour la trompette (calcaire) et la morille.
+3. **Délais de pousse par espèce non sourcés en revue à comité de lecture.** Voir la note en fin
+   de fichier.
 
 ## Précision du couvert forestier
 
 Le couvert pèse 18 % du score, c'est-à-dire plus que tout autre critère d'habitat — sa qualité
 plafonne donc celle du modèle entier.
 
-**État actuel.** `OverpassLandCover` interroge OpenStreetMap (`landuse=forest`, `natural=wood`) et
-classe chaque polygone via `ForestCover::fromOsmTags()` d'après `leaf_type`, `wood`, `trees`,
-`species`, `genus`. Cinq classes seulement : hors forêt, essence indéterminée, feuillus, conifères,
-mixte. Rasterisé à **100 m** sur 44,72–45,45 N / 5,38–6,30 E.
+**Deux sources, choisies à l'exécution.** `BdForetLandCover` est l'implémentation câblée sur le
+port `LandCoverSource`. Elle lit BD Forêt V2 si le jeu converti existe, et délègue sinon à
+`OverpassLandCover`. L'hydrographie passe **toujours** par OSM : BD Forêt ne décrit que la
+végétation.
 
-**Limite principale.** Beaucoup de polygones OSM ne portent aucun tag d'essence et tombent en
-`Undetermined`, dont l'affinité vaut 0,60–0,68 pour **toutes** les espèces : ces mailles ne
-discriminent rien. S'y ajoutent l'absence de densité et de fermeture du couvert, et la
-sélection OSM restreinte (ni landes, ni vergers, ni alignements).
+| | BD Forêt V2 | OpenStreetMap |
+|---|---|---|
+| Déclenchement | `backend/var/bdforet/formation-vegetale.geojsonl` présent (ou `BDFORET_PATH`) | sinon |
+| Classement | `ForestCover::fromBdForetCode()` sur `CODE_TFV` | `ForestCover::fromOsmTags()` |
+| Granularité | toute plage ≥ 0,5 ha, essence photo-interprétée | tags volontaires, souvent absents |
+| Licence | Licence Ouverte 2.0 | ODbL 1.0 |
 
-**Deux pistes d'amélioration, par ordre de rapport gain / effort :**
+**Format attendu.** GeoJSON une ligne par polygone (`ogr2ogr -f GeoJSONSeq`), en WGS84, produit
+par `./dev.sh bdforet`. L'adaptateur accepte aussi un `FeatureCollection` classique pour les
+petits extraits, mais le streaming ligne à ligne est ce qui permet de passer un département
+entier sans saturer la mémoire. Les vecteurs bruts IGN font des dizaines à centaines de Mo :
+cache local, **jamais committés**.
 
-1. **Élargir les heuristiques OSM** — enrichir `fromOsmTags()` et la requête Overpass
-   (`leaf_cycle`, `landcover=trees`, plus de genres). Peu de code, licence inchangée, mais
-   **sans effet sur les massifs non tagués**.
-2. **IGN BD Forêt V2 derrière `LandCoverSource`** — peuplements vectoriels avec codes d'essence
-   TFV pour les départements couvrant l'emprise (38 principalement, franges 26 / 73). C'est le
-   vrai gain sur les scores par espèce, et déjà l'intention affichée du README. Nouveau
-   adaptateur d'infrastructure + table TFV → `ForestCover` + recâblage `services.yaml` +
-   `app:precompute` à relancer ; scoring et masque inchangés si les codes restent 0–4. Vecteurs
-   bruts : dizaines à centaines de Mo, à mettre en cache local, **pas à committer**. Licence
-   Ouverte, donc à répercuter dans `ATTRIBUTION.md` et `data/README.md` (l'ODbL reste due tant
-   que l'hydrographie et les lisières viennent d'OSM).
+**Correspondance TFV → `ForestCover`.** Les niveaux I–II du code donnent la couverture
+(`FF` fermée, `FO` ouverte, `FP` peupleraie, `LA` lande), les suivants la composition.
 
-**Corine Land Cover est à écarter** comme axe principal : sa résolution est du même ordre que la
-grille actuelle. Sentinel-2 / NDVI n'apporte pas les essences, seulement la fermeture du couvert
-et la détection des coupes récentes — utile plus tard, pour un critère de densité.
+| Code | Classe | Remarque |
+|---|---|---|
+| `FF1*`, `FO1*`, `FP*` | Feuillus | peupleraie incluse |
+| `FF2*`, `FO2*` | Conifères | |
+| `FF31`, `FF32`, `FO3*` | Mixte | prépondérance feuillus ou conifères |
+| `FF0*`, `FO0*`, `LA*` | Hors forêt | coupe rase, incident, lande : plus d'hôte |
+| autre / vide | Indéterminé | |
+
+`FF0` et `FO0` sont volontairement classés hors forêt : la production de carpophores s'effondre
+dès que les arbres hôtes disparaissent, même si la parcelle reste juridiquement forestière.
+
+**Limite qui subsiste en mode OSM.** Beaucoup de polygones ne portent aucun tag d'essence et
+tombent en `Undetermined`, dont l'affinité vaut 0,60–0,68 pour **toutes** les espèces : ces
+mailles ne discriminent rien. `fromOsmTags()` a été élargi (`leaf_cycle`, `taxon`, `species:fr`,
+genres et noms français courants) et la requête Overpass accepte `landcover=trees` et
+`natural=scrub`, ce qui récupère les cas tagués autrement — mais rien ne peut deviner une essence
+non renseignée.
+
+**Corine Land Cover est à écarter** : sa résolution est du même ordre que la grille de 100 m.
 
 ## Plafonds du score
 
