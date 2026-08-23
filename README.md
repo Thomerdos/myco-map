@@ -93,10 +93,11 @@ sudo apt install -y php-cli php-gd php-sqlite3 php-curl php-mbstring php-xml unz
 ## Installation et lancement
 
 ```bash
-cp backend/.env.example backend/.env
+git clone https://github.com/thomerdos/myco-map.git
+cd myco-map
 chmod +x dev.sh
 ./dev.sh install
-./dev.sh precompute     # une fois, puis à rafraîchir si besoin
+./dev.sh restore-data   # base précalculée fournie, pas de téléchargement
 ```
 
 Puis, dans deux terminaux :
@@ -107,6 +108,19 @@ Puis, dans deux terminaux :
 ```
 
 Ouvrez [http://127.0.0.1:43123](http://127.0.0.1:43123).
+
+`restore-data` décompresse l'archive de `data/` et évite complètement l'étape de précalcul. Pour recalculer depuis les sources distantes, utilisez `./dev.sh precompute`, puis `./dev.sh export-data` pour régénérer l'archive publiée.
+
+## Commandes disponibles
+
+| Commande | Rôle |
+|---|---|
+| `./dev.sh install` | Dépendances PHP et JavaScript |
+| `./dev.sh restore-data` | Restaure la base précalculée depuis `data/` |
+| `./dev.sh precompute` | Recalcule la base depuis les sources distantes |
+| `./dev.sh export-data` | Réexporte la base vers `data/` pour publication |
+| `./dev.sh backend` | API sur le port 8765 |
+| `./dev.sh frontend` | Interface sur le port 43123 |
 
 ## API
 
@@ -150,6 +164,12 @@ Le modèle gagne surtout à être confronté au terrain :
 3. Les profils d'espèces sont regroupés dans `backend/src/Infrastructure/Mycology/InMemorySpeciesCatalog.php` : tranches d'altitude, préférence de fraîcheur, affinités de couvert, rapport à la lisière et à l'humidité s'y ajustent directement.
 4. Les poids des critères sont dans `backend/src/Domain/Mycology/Criterion.php`.
 
-## Licence
+## Licence et attribution
 
-Projet personnel, usage privé.
+Le **code** est sous licence [MIT](LICENSE).
+
+La **base précalculée** de `data/` dérive d'OpenStreetMap et reste donc sous [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) : toute redistribution doit créditer les contributeurs d'OpenStreetMap et conserver cette licence. Les sources, leurs licences et les attributions à reproduire sont détaillées dans [`ATTRIBUTION.md`](ATTRIBUTION.md).
+
+## Avertissement
+
+Les scores sont des estimations d'habitat favorable, pas des garanties de présence, et ne disent rien de la comestibilité. Ne consommez jamais un champignon sans identification certaine. Respectez la réglementation de cueillette et la propriété privée : la carte ne modélise ni les droits d'accès ni les zones protégées.

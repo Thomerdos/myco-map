@@ -1,9 +1,16 @@
+# Dépendances
 /vendor/
-composer
-composer.phar
-.env
-.env.local
-backend/var/
+backend/vendor/
 frontend/node_modules/
 frontend/dist/
+
+# Outils locaux
+composer
+composer.phar
+
+# Configuration locale
+.env
+.env.local
+
+# Caches et données générées : la base publiée vit dans data/, pas ici
 backend/var/
