@@ -47,6 +47,12 @@ enum Criterion: string
         };
     }
 
+    /**
+     * Expert-elicited priors, not coefficients fitted on harvest data. Published yield models
+     * back the ranking and the direction of each effect but not the exact percentages — see
+     * AGENTS.md for the sourced table, the known divergences and the recalibration procedure.
+     * The weights must sum to 1.0.
+     */
     public function weight(): float
     {
         return match ($this) {
