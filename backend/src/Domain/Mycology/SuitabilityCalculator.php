@@ -32,7 +32,7 @@ final readonly class SuitabilityCalculator
             + $this->edgeValue($species, $terrain) * Criterion::Edge->weight()
             + $this->slopeValue($species, $terrain) * Criterion::Slope->weight();
 
-        return $this->applyCaps($total, $species, $terrain, $season);
+        return $this->applyCaps($total, $species, $terrain, $season, $weather);
     }
 
     public function score(
@@ -85,7 +85,7 @@ final readonly class SuitabilityCalculator
             $total += $criterionScore->weighted();
         }
 
-        $total = $this->applyCaps($total, $species, $terrain, $season);
+        $total = $this->applyCaps($total, $species, $terrain, $season, $weather);
 
         return new SuitabilityScore(
             $total,
@@ -100,12 +100,21 @@ final readonly class SuitabilityCalculator
         Species $species,
         TerrainProfile $terrain,
         SeasonAssessment $season,
+        WeatherConditions $weather,
     ): float {
         if ($species->requiresForest && !$terrain->cover->isForest()) {
             $total = min($total, 18.0);
         }
         if (!$season->isInSeason()) {
             $total = min($total, 38.0);
+        }
+
+        // Habitat alone must not read as "go now" while fruitbodies are still incubating.
+        $phenology = $this->flushPhenology($species, $weather);
+        if ($phenology < 25.0) {
+            $total = min($total, 48.0);
+        } elseif ($phenology < 45.0) {
+            $total = min($total, 62.0);
         }
 
         return max(0.0, min(100.0, $total));
