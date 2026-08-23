@@ -40,7 +40,7 @@ enum Criterion: string
             self::Weather => 'La pluie déclenche le mycélium, mais les carpophores sortent seulement après un délai (souvent 7 à 15 jours selon l’espèce). Trop tôt après l’orage, il n’y a encore rien à cueillir.',
             self::Altitude => 'Température, durée d’enneigement et cortège d’arbres hôtes changent avec l’altitude : chaque espèce a sa tranche.',
             self::Exposure => 'Un versant nord garde l’humidité et la fraîcheur ; un adret chauffe et assèche. En montagne la préférence bascule aussi avec l’altitude.',
-            self::Cover => 'La quasi-totalité des espèces suivies sont mycorhiziennes : sans l’arbre hôte, le score s’effondre.',
+            self::Cover => 'La quasi-totalité des espèces suivies sont mycorhiziennes : sans l’arbre hôte, le score s’effondre. L’essence dominante et la fermeture du couvert affinent le feuillu / conifère brut.',
             self::Moisture => 'Combres, thalwegs et proximité de l’eau retiennent l’humidité du sol après la pluie ; les croupes convexes sèchent en deux jours.',
             self::Edge => 'La fructification chute nettement dans la bande de lisière : le vent et le soleil y déstabilisent température et humidité du sol. Le cœur de massif reste la référence, sauf pour les espèces liées aux milieux perturbés.',
             self::Slope => 'Plus la pente est forte, plus le sol est mince et plus l’eau et la matière organique dévalent : les suivis de récolte montrent un rendement qui baisse régulièrement quand la pente augmente. La pente pèse peu seule (2 %), mais elle affine le choix entre deux boisements voisins.',

@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Infrastructure\LandCover;
 
 use App\Domain\Geo\BoundingBox;
+use App\Domain\Terrain\CanopyClosure;
 use App\Domain\Terrain\ForestCover;
 use App\Domain\Terrain\ForestPolygon;
+use App\Domain\Terrain\HostTree;
 use App\Domain\Terrain\LandCoverSource;
 use App\Domain\Terrain\WaterFeature;
 use Psr\Log\LoggerInterface;
@@ -220,7 +222,10 @@ final class OverpassLandCover implements LandCoverSource
     /** @param array<string, mixed> $element */
     private function toForestPolygon(array $element): ?ForestPolygon
     {
-        $cover = ForestCover::fromOsmTags($element['tags'] ?? []);
+        $tags = $element['tags'] ?? [];
+        $cover = ForestCover::fromOsmTags($tags);
+        $host = HostTree::fromOsmTags($tags);
+        $canopy = CanopyClosure::fromOsmTags($tags);
 
         if (($element['type'] ?? '') === 'relation') {
             $outer = [];
@@ -238,12 +243,12 @@ final class OverpassLandCover implements LandCoverSource
                 $outer[] = $points;
             }
 
-            return $outer === [] ? null : new ForestPolygon($cover, $outer, $inner);
+            return $outer === [] ? null : new ForestPolygon($cover, $outer, $inner, $host, $canopy);
         }
 
         $points = $this->pointsFrom($element['geometry'] ?? []);
 
-        return \count($points) < 3 ? null : new ForestPolygon($cover, [$points]);
+        return \count($points) < 3 ? null : new ForestPolygon($cover, [$points], hostTree: $host, canopy: $canopy);
     }
 
     /**

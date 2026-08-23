@@ -11,8 +11,8 @@
 | `elevation` | Altitude en mètres |
 | `slope`, `aspect` | Pente et exposition en degrés (Horn) |
 | `curvature` | Laplacien, positif en terrain concave |
-| `cover` | Couvert forestier : 0 hors forêt, 1 indéterminé, 2 feuillus, 3 conifères, 4 mixte |
-| | Cette archive est calculée sur OpenStreetMap. Un précalcul avec BD Forêt V2 (voir le README principal) remplit le même champ avec des essences bien plus fiables. |
+| `cover` | Entier empaqueté (`StandCode`) : 3 bits de couvert (0 hors forêt, 1 indéterminé, 2 feuillus, 3 conifères, 4 mixte), puis 4 bits d'essence dominante (`HostTree`) et 2 bits de densité (`CanopyClosure`). Les archives historiques qui n'ont écrit que 0–4 restent valides : hôte et densité s'y lisent comme inconnus. |
+| | Cette archive est calculée sur OpenStreetMap. Un précalcul avec BD Forêt V2 (voir le README principal) remplit les bits d'essence et de densité, beaucoup plus fiables. |
 | `edge_distance` | Distance signée à la lisière, positive dans le boisement |
 | `water_distance` | Distance au cours d'eau le plus proche |
 | `grid_definition` | Emprise, taille de maille, dimensions, date de calcul |

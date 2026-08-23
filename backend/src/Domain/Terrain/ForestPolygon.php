@@ -14,6 +14,13 @@ final readonly class ForestPolygon
         public ForestCover $cover,
         public array $outerRings,
         public array $innerRings = [],
+        public HostTree $hostTree = HostTree::Unknown,
+        public CanopyClosure $canopy = CanopyClosure::Unknown,
     ) {
+    }
+
+    public function standCode(): int
+    {
+        return StandCode::pack($this->cover, $this->hostTree, $this->canopy);
     }
 }

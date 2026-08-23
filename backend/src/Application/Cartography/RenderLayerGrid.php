@@ -170,6 +170,10 @@ final readonly class RenderLayerGrid
                 'elevation' => $profile->elevationMeters,
                 'exposure' => $profile->exposure()->cardinal(),
                 'cover' => $profile->cover->label(),
+                'hostTree' => $profile->hostTree->label(),
+                'hostTreeCode' => $profile->hostTree->value,
+                'canopy' => $profile->canopy->shortLabel(),
+                'canopyCode' => $profile->canopy->value,
                 'reasons' => array_map(
                     static fn ($driver): string => $driver->explanation,
                     $score->drivers(3),

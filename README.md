@@ -9,7 +9,7 @@ L'application croise relief, couvert forestier, hydrographie et météo récente
 - **Carte raster continue** à 100 m de résolution, lissée à l'affichage : pas de quadrillage visible, les zones épousent la forme réelle des forêts et du relief.
 - **Masques de critères** interchangeables : chance de trouver (score combiné), altitude, exposition, pente, couvert forestier, humidité topographique, distance à la lisière, pluie déclenchante.
 - **Six espèces** avec profils d'habitat distincts et fenêtres de cueillette : cèpe, trompette de la mort, chanterelles, girolle, pied de mouton, morille.
-- **Détail au clic** : altitude, pente, exposition, couvert, distance lisière et eau, plus la décomposition complète du score critère par critère.
+- **Détail au clic** : altitude, pente, exposition, couvert, essence dominante, densité, distance lisière et eau, plus la décomposition complète du score critère par critère.
 - **Meilleurs secteurs visibles** classés, espacés d'au moins 900 m pour proposer des points de départ distincts.
 - **Fonds de carte** plan, topographique et satellite.
 
@@ -20,7 +20,7 @@ Modèle **par règles expertes**, volontairement transparent plutôt qu'une boî
 | Critère | Poids | Ce qui est évalué |
 |---|---|---|
 | Météo récente | 22 % | Pluie déclenchante J-14 à J-5, pluie des 5 derniers jours, température, humidité |
-| Couvert forestier | 18 % | Adéquation feuillus / conifères / mixte avec les hôtes de l'espèce |
+| Couvert forestier | 18 % | Essence dominante et fermeture du couvert, avec repli feuillus / conifères / mixte |
 | Saison | 16 % | Position dans les fenêtres de cueillette de l'espèce |
 | Altitude | 15 % | Appartenance à la tranche altitudinale, en trapèze |
 | Exposition | 15 % | Fraîcheur du versant, **cible ajustée selon l'altitude** |
@@ -38,7 +38,7 @@ Découpage DDD, sans suffixe `Service` :
 backend/src/
 ├── Domain/              # Métier pur, sans dépendance framework
 │   ├── Geo/             # Coordinates, BoundingBox, Grid, GridWindow, SurveyArea
-│   ├── Terrain/         # TerrainProfile, ForestCover, Exposure + ports
+│   ├── Terrain/         # TerrainProfile, ForestCover, HostTree, CanopyClosure, StandCode, Exposure + ports
 │   ├── Weather/         # WeatherConditions, WeatherField + port
 │   ├── Mycology/        # Species, SuitabilityCalculator, Criterion, SeasonAssessment
 │   └── Cartography/     # MapLayer, LayerLegendFactory, LayerValueResolver
@@ -47,7 +47,7 @@ backend/src/
 │   └── Precomputation/  # PrecomputeTerrain
 └── Infrastructure/      # Adaptateurs techniques
     ├── Elevation/       # TerrariumTileElevation (tuiles DEM AWS)
-    ├── LandCover/       # OverpassLandCover (OpenStreetMap)
+    ├── LandCover/       # BdForetLandCover (optionnel) + OverpassLandCover (OpenStreetMap)
     ├── Weather/         # OpenMeteoWeather
     ├── Persistence/     # DbalTerrainCellStore (SQLite)
     ├── Raster/          # PolygonRasterizer, ChamferDistance, TerrainDerivatives
@@ -64,7 +64,7 @@ La partie statique du modèle est calculée une fois et stockée en SQLite :
 
 1. Téléchargement des tuiles de relief (~13 m/pixel) et échantillonnage bilinéaire des 587 000 mailles
 2. Pente, exposition et courbure par différences finies de Horn
-3. Rasterisation des polygones forestiers OSM, clairières comprises
+3. Rasterisation des polygones forestiers (BD Forêt si présente, sinon OSM), clairières comprises, essence et densité empaquetées dans un `StandCode`
 4. Rasterisation de l'hydrographie
 5. Transformées de distance aux lisières et aux cours d'eau
 6. Écriture en base
@@ -170,7 +170,7 @@ couvert, utiles pour la densité du peuplement et les coupes récentes.
 ## Limites connues
 
 - Les essences OSM restent approximatives : beaucoup de polygones ne portent pas de tag `leaf_type`, classés alors « essence indéterminée ». BD Forêt V2 lève cette limite (voir ci-dessus).
-- La densité et la fermeture du couvert ne sont pas modélisées, alors que la surface terrière est la variable de peuplement la plus corrélée aux récoltes.
+- La fermeture du couvert (`FF` / `FO`) entre dans le score, mais la surface terrière (optimum vers 15–20 m²/ha) n'est pas mesurée. Piste : NDVI Sentinel-2.
 - Le modèle ne connaît ni la nature géologique du sol ni le pH, qui comptent notamment pour la trompette et la morille.
 - Les fenêtres de cueillette sont calées sur des moyennes régionales, pas sur la phénologie de l'année en cours.
 - La pression de cueillette et l'accessibilité réelle (propriété privée, réglementation locale) ne sont pas modélisées.
@@ -181,7 +181,7 @@ Le modèle gagne surtout à être confronté au terrain :
 
 1. Sélectionnez l'espèce, placez-vous sur un secteur que vous connaissez et cliquez dessus.
 2. Comparez le score et la décomposition par critère à ce que vous observez réellement.
-3. Les profils d'espèces sont regroupés dans `backend/src/Infrastructure/Mycology/InMemorySpeciesCatalog.php` : tranches d'altitude, préférence de fraîcheur, affinités de couvert, rapport à la lisière et à l'humidité s'y ajustent directement.
+3. Les profils d'espèces sont regroupés dans `backend/src/Infrastructure/Mycology/InMemorySpeciesCatalog.php` : tranches d'altitude, préférence de fraîcheur, affinités de couvert, d'essence et de densité, rapport à la lisière et à l'humidité s'y ajustent directement.
 4. Les poids des critères sont dans `backend/src/Domain/Mycology/Criterion.php`. Leur justification, les sources scientifiques qui les appuient et les divergences connues avec la littérature sont documentées dans [`AGENTS.md`](AGENTS.md).
 
 ## Licence et attribution
