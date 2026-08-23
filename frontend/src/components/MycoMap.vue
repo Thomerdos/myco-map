@@ -288,9 +288,10 @@ function renderHighlights(grid: LayerGrid | null) {
   height: 100%;
   transform: rotate(45deg);
   color: #16190f;
+  font-family: var(--font-ui, 'Sora', sans-serif);
   font-size: 0.74rem;
   font-style: normal;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .leaflet-tooltip.spot-label {
