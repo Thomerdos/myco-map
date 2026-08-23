@@ -45,7 +45,7 @@ Ouvrez [http://127.0.0.1:43123](http://127.0.0.1:43123).
 
 ### Espèces couvertes
 
-Cèpe, trompette de la mort, chanterelle améthyste, girolle, pied de mouton, morille.
+Cèpe, trompette de la mort, chanterelles (toutes espèces locales), girolle, pied de mouton, morille.
 
 ## Approche de scoring
 
