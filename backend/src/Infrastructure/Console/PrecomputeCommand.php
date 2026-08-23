@@ -70,6 +70,14 @@ final class PrecomputeCommand extends Command
             $report->waterFeatures,
         ));
 
+        if (!$report->isComplete()) {
+            $io->warning(sprintf(
+                '%d tuile(s) OpenStreetMap n\'ont pas pu être téléchargées. Relancez la commande '
+                . 'plus tard pour compléter : les tuiles déjà obtenues sont en cache.',
+                $report->unavailableChunks,
+            ));
+        }
+
         return Command::SUCCESS;
     }
 }

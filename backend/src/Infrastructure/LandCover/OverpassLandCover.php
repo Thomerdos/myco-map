@@ -17,7 +17,7 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * whole mountain range never has to be downloaded in one response, and every tile is
  * cached on disk to keep re-runs offline.
  */
-final readonly class OverpassLandCover implements LandCoverSource
+final class OverpassLandCover implements LandCoverSource
 {
     private const ENDPOINTS = [
         'https://overpass-api.de/api/interpreter',
@@ -25,13 +25,21 @@ final readonly class OverpassLandCover implements LandCoverSource
     ];
 
     private const CHUNK_DEGREES = 0.2;
-    private const MAX_ATTEMPTS = 3;
+    private const MAX_ATTEMPTS = 4;
+    private const COURTESY_DELAY_SECONDS = 2;
+
+    private int $unavailableChunks = 0;
 
     public function __construct(
-        private HttpClientInterface $httpClient,
-        private LoggerInterface $logger,
-        private string $cacheDirectory,
+        private readonly HttpClientInterface $httpClient,
+        private readonly LoggerInterface $logger,
+        private readonly string $cacheDirectory,
     ) {
+    }
+
+    public function unavailableChunks(): int
+    {
+        return $this->unavailableChunks;
     }
 
     public function forestPolygons(BoundingBox $bounds): iterable
@@ -132,7 +140,13 @@ final readonly class OverpassLandCover implements LandCoverSource
         return sprintf('%.5f,%.5f,%.5f,%.5f', $box->south, $box->west, $box->north, $box->east);
     }
 
-    /** @return array<int, array<string, mixed>> */
+    /**
+     * A chunk that cannot be fetched leaves a gap rather than aborting the whole
+     * precomputation: successful chunks are cached, so re-running the command fills
+     * the gaps without downloading anything twice.
+     *
+     * @return array<int, array<string, mixed>>
+     */
     private function query(string $cacheKey, string $query): array
     {
         $path = sprintf('%s/%s.json', $this->cacheDirectory, $cacheKey);
@@ -172,18 +186,26 @@ final readonly class OverpassLandCover implements LandCoverSource
                 }
 
                 $this->store($path, $content);
+                sleep(self::COURTESY_DELAY_SECONDS);
 
                 return $decoded['elements'];
             }
 
             $this->logger->warning('Overpass en échec, nouvelle tentative', [
+                'chunk' => $cacheKey,
                 'attempt' => $attempt,
                 'error' => $lastError,
             ]);
-            sleep(5 * $attempt);
+            sleep(8 * $attempt);
         }
 
-        throw new \RuntimeException(sprintf('Overpass indisponible (%s)', $lastError));
+        $this->unavailableChunks++;
+        $this->logger->error('Chunk Overpass abandonné', [
+            'chunk' => $cacheKey,
+            'error' => $lastError,
+        ]);
+
+        return [];
     }
 
     /** @param array<string, mixed> $element */
