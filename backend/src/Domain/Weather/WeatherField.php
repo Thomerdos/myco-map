@@ -42,6 +42,7 @@ final readonly class WeatherField
         }
 
         $trigger = $recent = $fortnight = $temperature = $humidity = $soil = $soaking = 0.0;
+        $accumulated = $preceding = 0.0;
         $daysWeighted = 0.0;
         $daysWeight = 0.0;
 
@@ -55,6 +56,8 @@ final readonly class WeatherField
             $humidity += $conditions->relativeHumidityPercent * $share;
             $soil += $conditions->soilMoisture * $share;
             $soaking += $conditions->soakingRainMillimetres * $share;
+            $accumulated += $conditions->accumulatedRainMillimetres * $share;
+            $preceding += $conditions->precedingDryMillimetres * $share;
             if ($conditions->daysSinceSoakingRain !== null) {
                 $daysWeighted += $conditions->daysSinceSoakingRain * $share;
                 $daysWeight += $share;
@@ -70,6 +73,8 @@ final readonly class WeatherField
             $soil,
             $daysWeight > 0 ? (int) round($daysWeighted / $daysWeight) : null,
             $soaking,
+            $accumulated,
+            $preceding,
         );
     }
 
@@ -77,6 +82,7 @@ final readonly class WeatherField
     {
         $count = \count($this->samples);
         $trigger = $recent = $fortnight = $temperature = $humidity = $soil = $soaking = 0.0;
+        $accumulated = $preceding = 0.0;
         $daysSum = 0;
         $daysCount = 0;
 
@@ -89,6 +95,8 @@ final readonly class WeatherField
             $humidity += $conditions->relativeHumidityPercent;
             $soil += $conditions->soilMoisture;
             $soaking += $conditions->soakingRainMillimetres;
+            $accumulated += $conditions->accumulatedRainMillimetres;
+            $preceding += $conditions->precedingDryMillimetres;
             if ($conditions->daysSinceSoakingRain !== null) {
                 $daysSum += $conditions->daysSinceSoakingRain;
                 $daysCount++;
@@ -104,6 +112,8 @@ final readonly class WeatherField
             $soil / $count,
             $daysCount > 0 ? (int) round($daysSum / $daysCount) : null,
             $soaking / $count,
+            $accumulated / $count,
+            $preceding / $count,
         );
     }
 }

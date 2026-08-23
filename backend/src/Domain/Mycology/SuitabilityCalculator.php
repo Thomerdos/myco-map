@@ -122,13 +122,13 @@ final readonly class SuitabilityCalculator
 
     /**
      * Weather score is dominated by flush phenology: a soaking rain is necessary but
-     * fruitbodies lag behind it. Temperature and litter moisture only modulate once
-     * the clock since that rain is in the species' fruiting window.
+     * fruitbodies lag behind it. Temperature, air humidity and measured soil moisture
+     * only modulate once the clock since that rain is in the species' fruiting window.
      */
     private function weatherValue(Species $species, WeatherConditions $weather): float
     {
         $phenology = $this->flushPhenology($species, $weather);
-        $eventStrength = $this->soakingStrength($weather);
+        $supply = $this->waterSupply($weather);
 
         $recent = match (true) {
             $weather->daysSinceSoakingRain !== null && $weather->daysSinceSoakingRain <= 3
@@ -151,11 +151,29 @@ final readonly class SuitabilityCalculator
 
         $humidity = min(100.0, max(20.0, ($weather->relativeHumidityPercent - 45) * 2.2));
 
-        // Phenology × event strength is the gate; ambient conditions only fine-tune.
-        return $phenology * ($eventStrength / 100.0) * 0.58
-            + $recent * 0.14
-            + $temperature * 0.18
-            + $humidity * 0.10;
+        // Phenology × water supply is the gate; ambient conditions only fine-tune.
+        return $phenology * ($supply / 100.0) * 0.54
+            + $recent * 0.10
+            + $temperature * 0.16
+            + $humidity * 0.08
+            + $this->soilMoistureValue($weather) * 0.12;
+    }
+
+    /**
+     * Water available to the mycelium: the triggering spell, plus the four-week
+     * accumulation that published yield models relate fruiting to, boosted when the spell
+     * broke a dry period.
+     */
+    private function waterSupply(WeatherConditions $weather): float
+    {
+        $supply = $this->soakingStrength($weather) * 0.65
+            + $this->accumulationStrength($weather) * 0.35;
+
+        if ($weather->brokeDrySpell()) {
+            $supply *= 1.15;
+        }
+
+        return min(100.0, $supply);
     }
 
     private function soakingStrength(WeatherConditions $weather): float
@@ -168,6 +186,32 @@ final readonly class SuitabilityCalculator
             $mm >= 20 => 78.0,
             $mm >= 15 => 62.0,
             $mm >= 10 => 40.0,
+            default => 18.0,
+        };
+    }
+
+    /** Fruiting increases roughly linearly with rain accumulated over about four weeks. */
+    private function accumulationStrength(WeatherConditions $weather): float
+    {
+        $mm = max($weather->accumulatedRainMillimetres, $weather->fortnightRainMillimetres);
+
+        return min(100.0, $mm / 80.0 * 100.0);
+    }
+
+    /**
+     * Remote-sensed soil moisture rivals rainfall as a predictor of yields, so the measured
+     * value is scored directly rather than inferred from precipitation alone. Units are
+     * volumetric (m³/m³) for the top centimetre of soil.
+     */
+    private function soilMoistureValue(WeatherConditions $weather): float
+    {
+        $moisture = $weather->soilMoisture;
+
+        return match (true) {
+            $moisture >= 0.24 && $moisture <= 0.42 => 100.0,
+            $moisture > 0.42 => 78.0,
+            $moisture >= 0.18 => 72.0,
+            $moisture >= 0.12 => 45.0,
             default => 18.0,
         };
     }
@@ -302,15 +346,16 @@ final readonly class SuitabilityCalculator
         $slope = $terrain->slopeDegrees;
         $band = $species->slope;
         $reading = match (true) {
-            $slope < 2.0 => 'presque plat : litière souvent compactée ou gorgée après pluie',
-            $slope >= $band->optimumLow && $slope <= $band->optimumHigh => sprintf(
-                'dans la plage favorable (%.0f–%.0f°) : litière stable, bon drainage de surface',
-                $band->optimumLow,
-                $band->optimumHigh,
+            $slope >= $band->maximum => 'trop raide : sol mince et lessivage fort, litière emportée',
+            $slope > $band->toleratedUpTo => sprintf(
+                'au-delà de la pente tolérée (%.0f°) : la matière organique et l\'eau dévalent',
+                $band->toleratedUpTo,
             ),
-            $slope > $band->maximum => 'trop raide : lessivage fort, peu de litière utile',
-            $slope > $band->optimumHigh => 'un peu trop pentu : la matière organique et l\'eau dévalent plus vite',
-            default => 'légèrement trop faible : drainage moins franc qu\'à l\'optimum',
+            $slope <= 5.0 => 'terrain porteur : le sol garde son épaisseur et sa litière',
+            default => sprintf(
+                'pente modérée, encore favorable jusqu\'à %.0f°',
+                $band->toleratedUpTo,
+            ),
         };
 
         return sprintf('Pente de %.0f° — %s', $slope, $reading);

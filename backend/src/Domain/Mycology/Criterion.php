@@ -42,8 +42,8 @@ enum Criterion: string
             self::Exposure => 'Un versant nord garde l’humidité et la fraîcheur ; un adret chauffe et assèche. En montagne la préférence bascule aussi avec l’altitude.',
             self::Cover => 'La quasi-totalité des espèces suivies sont mycorhiziennes : sans l’arbre hôte, le score s’effondre.',
             self::Moisture => 'Combres, thalwegs et proximité de l’eau retiennent l’humidité du sol après la pluie ; les croupes convexes sèchent en deux jours.',
-            self::Edge => 'Certaines espèces aiment la lisière (lumière, rosée), d’autres le cœur de massif (litière épaisse, ambiance stable).',
-            self::Slope => 'Une pente douce à moyenne (quelques degrés à ~25°) limite le lessivage de la litière et évite les sols gorgés des replats. Au-delà, l’eau et la matière organique dévalent ; le plat absolu se compacte ou stagne. La pente pèse peu seule (2 %), mais elle affine le choix entre deux boisements voisins.',
+            self::Edge => 'La fructification chute nettement dans la bande de lisière : le vent et le soleil y déstabilisent température et humidité du sol. Le cœur de massif reste la référence, sauf pour les espèces liées aux milieux perturbés.',
+            self::Slope => 'Plus la pente est forte, plus le sol est mince et plus l’eau et la matière organique dévalent : les suivis de récolte montrent un rendement qui baisse régulièrement quand la pente augmente. La pente pèse peu seule (2 %), mais elle affine le choix entre deux boisements voisins.',
         };
     }
 
