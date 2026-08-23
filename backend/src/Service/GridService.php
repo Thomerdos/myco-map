@@ -21,6 +21,16 @@ final class GridService
         $latStep = $resolutionMeters / self::EARTH_RADIUS_M * (180 / M_PI);
         $lngStep = $resolutionMeters / (self::EARTH_RADIUS_M * cos(deg2rad($latMid))) * (180 / M_PI);
 
+        $latSpan = max($north - $south, $latStep);
+        $lngSpan = max($east - $west, $lngStep);
+        $estimatedCount = (int) ceil($latSpan / $latStep) * (int) ceil($lngSpan / $lngStep);
+
+        if ($estimatedCount > $maxCells) {
+            $scale = sqrt($estimatedCount / $maxCells);
+            $latStep *= $scale;
+            $lngStep *= $scale;
+        }
+
         $cells = [];
         $lat = $south + $latStep / 2;
         while ($lat <= $north) {
@@ -34,11 +44,6 @@ final class GridService
                 $lng += $lngStep;
             }
             $lat += $latStep;
-        }
-
-        if (count($cells) > $maxCells) {
-            $step = (int) ceil(count($cells) / $maxCells);
-            $cells = array_values(array_filter($cells, static fn (array $_, int $i): bool => $i % $step === 0, ARRAY_FILTER_USE_BOTH));
         }
 
         return $cells;

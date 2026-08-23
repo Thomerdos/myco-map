@@ -35,6 +35,9 @@ onMounted(() => {
   }).addTo(map)
 
   layerGroup = L.layerGroup().addTo(map)
+  map.whenReady(() => {
+    emitBounds()
+  })
   map.on('moveend', emitBounds)
 
   renderLayers()
@@ -110,8 +113,8 @@ function renderLayers() {
     L.rectangle(bounds, {
       color: scoreColor(cell.score),
       fillColor: scoreColor(cell.score),
-      fillOpacity: 0.5,
-      weight: 1,
+      fillOpacity: 0.45,
+      weight: 0,
     })
       .on('click', () => emit('cellSelect', cell))
       .addTo(layerGroup!)
