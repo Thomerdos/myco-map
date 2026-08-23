@@ -3,3 +3,6 @@ composer
 composer.phar
 .env
 .env.local
+backend/var/
+frontend/node_modules/
+frontend/dist/
