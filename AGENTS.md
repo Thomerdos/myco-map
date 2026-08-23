@@ -76,6 +76,39 @@ de la plage (`LayerLegendFactory`).
 6. **Pas d'amorçage par sécheresse.** Un épisode marqué après une longue période sèche est plus
    productif ; le modèle traite tous les épisodes de même cumul à l'identique.
 
+## Précision du couvert forestier
+
+Le couvert pèse 18 % du score, c'est-à-dire plus que tout autre critère d'habitat — sa qualité
+plafonne donc celle du modèle entier.
+
+**État actuel.** `OverpassLandCover` interroge OpenStreetMap (`landuse=forest`, `natural=wood`) et
+classe chaque polygone via `ForestCover::fromOsmTags()` d'après `leaf_type`, `wood`, `trees`,
+`species`, `genus`. Cinq classes seulement : hors forêt, essence indéterminée, feuillus, conifères,
+mixte. Rasterisé à **100 m** sur 44,72–45,45 N / 5,38–6,30 E.
+
+**Limite principale.** Beaucoup de polygones OSM ne portent aucun tag d'essence et tombent en
+`Undetermined`, dont l'affinité vaut 0,60–0,68 pour **toutes** les espèces : ces mailles ne
+discriminent rien. S'y ajoutent l'absence de densité et de fermeture du couvert, et la
+sélection OSM restreinte (ni landes, ni vergers, ni alignements).
+
+**Deux pistes d'amélioration, par ordre de rapport gain / effort :**
+
+1. **Élargir les heuristiques OSM** — enrichir `fromOsmTags()` et la requête Overpass
+   (`leaf_cycle`, `landcover=trees`, plus de genres). Peu de code, licence inchangée, mais
+   **sans effet sur les massifs non tagués**.
+2. **IGN BD Forêt V2 derrière `LandCoverSource`** — peuplements vectoriels avec codes d'essence
+   TFV pour les départements couvrant l'emprise (38 principalement, franges 26 / 73). C'est le
+   vrai gain sur les scores par espèce, et déjà l'intention affichée du README. Nouveau
+   adaptateur d'infrastructure + table TFV → `ForestCover` + recâblage `services.yaml` +
+   `app:precompute` à relancer ; scoring et masque inchangés si les codes restent 0–4. Vecteurs
+   bruts : dizaines à centaines de Mo, à mettre en cache local, **pas à committer**. Licence
+   Ouverte, donc à répercuter dans `ATTRIBUTION.md` et `data/README.md` (l'ODbL reste due tant
+   que l'hydrographie et les lisières viennent d'OSM).
+
+**Corine Land Cover est à écarter** comme axe principal : sa résolution est du même ordre que la
+grille actuelle. Sentinel-2 / NDVI n'apporte pas les essences, seulement la fermeture du couvert
+et la détection des coupes récentes — utile plus tard, pour un critère de densité.
+
 ## Plafonds du score
 
 `SuitabilityCalculator::applyCaps` empêche l'habitat seul de faire dire n'importe quoi :
