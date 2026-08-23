@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Cartography;
 
 /**
- * The masks that can be displayed on the map: the species potential itself, or any
- * single criterion feeding into it.
+ * The masks that can be displayed on the map: the combined "where to look" score,
+ * or any single criterion feeding into it.
  */
 enum MapLayer: string
 {
@@ -22,7 +22,7 @@ enum MapLayer: string
     public function label(): string
     {
         return match ($this) {
-            self::Potential => 'Potentiel de l\'espèce',
+            self::Potential => 'Chance de trouver',
             self::Elevation => 'Altitude',
             self::Exposure => 'Exposition (fraîcheur du versant)',
             self::Slope => 'Pente',

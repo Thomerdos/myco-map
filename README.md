@@ -7,7 +7,7 @@ L'application croise relief, couvert forestier, hydrographie et météo récente
 ## Ce que fait l'application
 
 - **Carte raster continue** à 100 m de résolution, lissée à l'affichage : pas de quadrillage visible, les zones épousent la forme réelle des forêts et du relief.
-- **Masques de critères** interchangeables : potentiel de l'espèce, altitude, exposition, pente, couvert forestier, humidité topographique, distance à la lisière, pluie déclenchante.
+- **Masques de critères** interchangeables : chance de trouver (score combiné), altitude, exposition, pente, couvert forestier, humidité topographique, distance à la lisière, pluie déclenchante.
 - **Six espèces** avec profils d'habitat distincts et fenêtres de cueillette : cèpe, trompette de la mort, chanterelles, girolle, pied de mouton, morille.
 - **Détail au clic** : altitude, pente, exposition, couvert, distance lisière et eau, plus la décomposition complète du score critère par critère.
 - **Meilleurs secteurs visibles** classés, espacés d'au moins 900 m pour proposer des points de départ distincts.
