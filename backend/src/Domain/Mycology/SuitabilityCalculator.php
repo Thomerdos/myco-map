@@ -61,7 +61,7 @@ final readonly class SuitabilityCalculator
             new CriterionScore(
                 Criterion::Cover,
                 $this->coverValue($species, $terrain),
-                sprintf('%s — hôtes recherchés : %s', $terrain->cover->label(), $species->hostTrees),
+                $this->explainCover($species, $terrain),
             ),
             new CriterionScore(
                 Criterion::Moisture,
@@ -275,7 +275,7 @@ final readonly class SuitabilityCalculator
 
     private function coverValue(Species $species, TerrainProfile $terrain): float
     {
-        return $species->coverSuitability($terrain->cover) * 100;
+        return $species->coverSuitability($terrain->cover, $terrain->hostTree, $terrain->canopy) * 100;
     }
 
     private function moistureValue(Species $species, TerrainProfile $terrain): float
@@ -404,6 +404,20 @@ final readonly class SuitabilityCalculator
             $this->coolTarget($species, $terrain),
             $terrain->elevationMeters,
         );
+    }
+
+    private function explainCover(Species $species, TerrainProfile $terrain): string
+    {
+        $parts = [$terrain->cover->label()];
+
+        if ($terrain->hostTree->isKnown()) {
+            $parts[] = $terrain->hostTree->label();
+        }
+        if ($terrain->canopy->isKnown()) {
+            $parts[] = lcfirst($terrain->canopy->label());
+        }
+
+        return sprintf('%s — hôtes recherchés : %s', implode(', ', $parts), $species->hostTrees);
     }
 
     private function explainMoisture(TerrainProfile $terrain): string

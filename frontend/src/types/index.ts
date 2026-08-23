@@ -92,6 +92,10 @@ export interface Highlight {
   elevation: number
   exposure: string
   cover: string
+  hostTree: string
+  hostTreeCode: number
+  canopy: string
+  canopyCode: number
   reasons: string[]
 }
 
@@ -145,6 +149,10 @@ export interface LocationReport {
     curvature: number
     cover: string
     coverCode: number
+    hostTree: string
+    hostTreeCode: number
+    canopy: string
+    canopyCode: number
     edgeDistance: number
     waterDistance: number
     moisture: number

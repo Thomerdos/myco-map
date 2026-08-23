@@ -10,7 +10,9 @@ use App\Domain\Mycology\HarvestWindow;
 use App\Domain\Mycology\SlopeBand;
 use App\Domain\Mycology\Species;
 use App\Domain\Mycology\SpeciesCatalog;
+use App\Domain\Terrain\CanopyClosure;
 use App\Domain\Terrain\ForestCover;
+use App\Domain\Terrain\HostTree;
 
 /**
  * Habitat profiles for the species targeted around Grenoble, calibrated on the
@@ -75,6 +77,19 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 flushDelayMinDays: 8,
                 flushDelayPeakDays: 12,
                 flushDelayMaxDays: 16,
+                hostAffinity: [
+                    HostTree::Beech->value => 1.00,
+                    HostTree::Oak->value => 0.98,
+                    HostTree::SpruceFir->value => 0.95,
+                    HostTree::Chestnut->value => 0.82,
+                    HostTree::Pine->value => 0.68,
+                    HostTree::OtherBroadleaf->value => 0.62,
+                    HostTree::OtherConifer->value => 0.58,
+                    HostTree::Larch->value => 0.55,
+                    HostTree::Douglas->value => 0.52,
+                    HostTree::Poplar->value => 0.28,
+                    HostTree::Robinia->value => 0.22,
+                ],
             ),
             new Species(
                 id: 'trompette',
@@ -97,6 +112,19 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 ],
                 edgeAffinity: EdgeAffinity::Interior,
                 moisturePreference: 0.85,
+                hostAffinity: [
+                    HostTree::Beech->value => 1.00,
+                    HostTree::Oak->value => 0.82,
+                    HostTree::OtherBroadleaf->value => 0.58,
+                    HostTree::Chestnut->value => 0.50,
+                    HostTree::Poplar->value => 0.30,
+                    HostTree::SpruceFir->value => 0.28,
+                    HostTree::Robinia->value => 0.22,
+                    HostTree::OtherConifer->value => 0.22,
+                    HostTree::Pine->value => 0.20,
+                    HostTree::Larch->value => 0.18,
+                    HostTree::Douglas->value => 0.16,
+                ],
             ),
             new Species(
                 id: 'chanterelle',
@@ -120,6 +148,19 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 ],
                 edgeAffinity: EdgeAffinity::Indifferent,
                 moisturePreference: 0.88,
+                hostAffinity: [
+                    HostTree::Beech->value => 0.96,
+                    HostTree::SpruceFir->value => 0.95,
+                    HostTree::Oak->value => 0.82,
+                    HostTree::Chestnut->value => 0.72,
+                    HostTree::OtherBroadleaf->value => 0.70,
+                    HostTree::OtherConifer->value => 0.70,
+                    HostTree::Pine->value => 0.68,
+                    HostTree::Larch->value => 0.58,
+                    HostTree::Douglas->value => 0.55,
+                    HostTree::Poplar->value => 0.35,
+                    HostTree::Robinia->value => 0.28,
+                ],
             ),
             new Species(
                 id: 'girolle',
@@ -145,6 +186,19 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 flushDelayMinDays: 5,
                 flushDelayPeakDays: 8,
                 flushDelayMaxDays: 13,
+                hostAffinity: [
+                    HostTree::Beech->value => 0.98,
+                    HostTree::Oak->value => 0.94,
+                    HostTree::SpruceFir->value => 0.92,
+                    HostTree::Chestnut->value => 0.90,
+                    HostTree::OtherBroadleaf->value => 0.68,
+                    HostTree::OtherConifer->value => 0.65,
+                    HostTree::Pine->value => 0.62,
+                    HostTree::Larch->value => 0.50,
+                    HostTree::Douglas->value => 0.48,
+                    HostTree::Poplar->value => 0.32,
+                    HostTree::Robinia->value => 0.26,
+                ],
             ),
             new Species(
                 id: 'pied_mouton',
@@ -167,6 +221,19 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 ],
                 edgeAffinity: EdgeAffinity::Interior,
                 moisturePreference: 0.80,
+                hostAffinity: [
+                    HostTree::SpruceFir->value => 1.00,
+                    HostTree::Beech->value => 0.82,
+                    HostTree::OtherConifer->value => 0.72,
+                    HostTree::Oak->value => 0.58,
+                    HostTree::Pine->value => 0.55,
+                    HostTree::Larch->value => 0.50,
+                    HostTree::Douglas->value => 0.48,
+                    HostTree::OtherBroadleaf->value => 0.48,
+                    HostTree::Chestnut->value => 0.42,
+                    HostTree::Poplar->value => 0.22,
+                    HostTree::Robinia->value => 0.18,
+                ],
             ),
             new Species(
                 id: 'morille',
@@ -190,6 +257,24 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 edgeAffinity: EdgeAffinity::Edge,
                 moisturePreference: 0.85,
                 requiresForest: false,
+                hostAffinity: [
+                    HostTree::Poplar->value => 1.00,
+                    HostTree::OtherBroadleaf->value => 0.95,
+                    HostTree::Robinia->value => 0.70,
+                    HostTree::SpruceFir->value => 0.62,
+                    HostTree::Oak->value => 0.55,
+                    HostTree::Beech->value => 0.42,
+                    HostTree::Chestnut->value => 0.40,
+                    HostTree::Pine->value => 0.32,
+                    HostTree::OtherConifer->value => 0.30,
+                    HostTree::Larch->value => 0.28,
+                    HostTree::Douglas->value => 0.26,
+                ],
+                canopyAffinity: [
+                    CanopyClosure::Open->value => 1.08,
+                    CanopyClosure::Closed->value => 1.00,
+                    CanopyClosure::Unknown->value => 1.00,
+                ],
             ),
         ];
     }

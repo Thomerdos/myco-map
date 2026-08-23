@@ -8,7 +8,7 @@ use App\Domain\Geo\BoundingBox;
 use App\Domain\Geo\Coordinates;
 use App\Domain\Geo\Grid;
 use App\Domain\Geo\GridWindow;
-use App\Domain\Terrain\ForestCover;
+use App\Domain\Terrain\StandCode;
 use App\Domain\Terrain\TerrainCellStore;
 use App\Domain\Terrain\TerrainProfile;
 use Doctrine\DBAL\Connection;
@@ -38,7 +38,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
                 slope REAL NOT NULL,
                 aspect REAL NOT NULL,
                 curvature REAL NOT NULL,
-                cover INTEGER NOT NULL,
+                cover INTEGER NOT NULL, -- packed StandCode (cover + host + canopy); 0-4 still valid
                 edge_distance INTEGER NOT NULL,
                 water_distance INTEGER NOT NULL,
                 PRIMARY KEY (row_index, column_index)
@@ -83,7 +83,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
                     $profile->slopeDegrees,
                     $profile->aspectDegrees,
                     $profile->curvature,
-                    $profile->cover->value,
+                    $profile->standCode(),
                     $profile->edgeDistanceMeters,
                     $profile->waterDistanceMeters,
                 ];
@@ -241,18 +241,28 @@ final class DbalTerrainCellStore implements TerrainCellStore
         );
     }
 
-    /** @param array<string, mixed> $row */
+    /**
+     * The `cover` column stores a {@see StandCode}: 3 bits of ForestCover, then host tree,
+     * then canopy. Archives written before packing only stored 0–4, which still unpacks as
+     * that cover class plus unknown host and canopy.
+     *
+     * @param array<string, mixed> $row
+     */
     private function hydrate(array $row): TerrainProfile
     {
+        $packed = (int) $row['cover'];
+
         return new TerrainProfile(
             coordinates: new Coordinates((float) $row['latitude'], (float) $row['longitude']),
             elevationMeters: (int) $row['elevation'],
             slopeDegrees: (float) $row['slope'],
             aspectDegrees: (float) $row['aspect'],
             curvature: (float) $row['curvature'],
-            cover: ForestCover::from((int) $row['cover']),
+            cover: StandCode::cover($packed),
             edgeDistanceMeters: (int) $row['edge_distance'],
             waterDistanceMeters: (int) $row['water_distance'],
+            hostTree: StandCode::host($packed),
+            canopy: StandCode::canopy($packed),
         );
     }
 }

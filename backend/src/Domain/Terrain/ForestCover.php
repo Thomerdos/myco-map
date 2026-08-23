@@ -96,8 +96,9 @@ enum ForestCover: int
      * {@see self::Open}: sporocarp production collapses once the host trees are gone, so
      * treating them as forest would be misleading even though the parcel is forest land.
      *
-     * Canopy closure (closed vs open) is carried by the code but has nowhere to go in this
-     * enum yet; see AGENTS.md for that gap.
+     * Canopy closure and the dominant host are decoded from the same code by
+     * {@see CanopyClosure::fromBdForetCode()} and {@see HostTree::fromBdForetCode()}, then
+     * packed with this class into a {@see StandCode}.
      */
     public static function fromBdForetCode(?string $code): self
     {

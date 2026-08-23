@@ -7,8 +7,11 @@ namespace App\Application\Precomputation;
 use App\Domain\Geo\Grid;
 use App\Domain\Geo\SurveyArea;
 use App\Domain\Terrain\ElevationSampler;
+use App\Domain\Terrain\CanopyClosure;
 use App\Domain\Terrain\ForestCover;
+use App\Domain\Terrain\HostTree;
 use App\Domain\Terrain\LandCoverSource;
+use App\Domain\Terrain\StandCode;
 use App\Domain\Terrain\TerrainCellStore;
 use App\Domain\Terrain\TerrainProfile;
 use App\Infrastructure\Raster\ChamferDistance;
@@ -58,12 +61,12 @@ final readonly class PrecomputeTerrain
         $insideForest = $this->distance->compute(
             $cover,
             $grid,
-            static fn (int $value): bool => $value === ForestCover::Open->value,
+            static fn (int $value): bool => StandCode::isOpenGround($value),
         );
         $towardsForest = $this->distance->compute(
             $cover,
             $grid,
-            static fn (int $value): bool => $value !== ForestCover::Open->value,
+            static fn (int $value): bool => !StandCode::isOpenGround($value),
         );
         $towardsWater = $this->distance->compute(
             $water,
@@ -133,8 +136,9 @@ final readonly class PrecomputeTerrain
         /** @var \SplFixedArray<int> $cover */
         $cover = new \SplFixedArray($grid->cellCount());
         $cover->setSize($grid->cellCount());
+        $openGround = StandCode::pack(ForestCover::Open, HostTree::Unknown, CanopyClosure::Unknown);
         for ($i = 0, $total = $grid->cellCount(); $i < $total; $i++) {
-            $cover[$i] = ForestCover::Open->value;
+            $cover[$i] = $openGround;
         }
 
         $polygonCount = 0;
@@ -142,10 +146,10 @@ final readonly class PrecomputeTerrain
             foreach ($chunk as $polygon) {
                 $polygonCount++;
                 foreach ($polygon->outerRings as $ring) {
-                    $this->rasterizer->fillRing($cover, $grid, $ring, $polygon->cover->value);
+                    $this->rasterizer->fillRing($cover, $grid, $ring, $polygon->standCode());
                 }
                 foreach ($polygon->innerRings as $ring) {
-                    $this->rasterizer->fillRing($cover, $grid, $ring, ForestCover::Open->value);
+                    $this->rasterizer->fillRing($cover, $grid, $ring, $openGround);
                 }
             }
             $progress->stageAdvanced($stage, $polygonCount, 0);
@@ -213,9 +217,9 @@ final readonly class PrecomputeTerrain
 
             for ($column = 0; $column < $grid->columns; $column++) {
                 $index = $rowOffset + $column;
-                $coverValue = ForestCover::from($cover[$index]);
+                $packed = $cover[$index];
 
-                $edgeDistance = $coverValue === ForestCover::Open
+                $edgeDistance = StandCode::isOpenGround($packed)
                     ? -$towardsForest[$index]
                     : $insideForest[$index];
 
@@ -228,9 +232,11 @@ final readonly class PrecomputeTerrain
                         slopeDegrees: round($derived['slope'][$index], 2),
                         aspectDegrees: round($derived['aspect'][$index], 1),
                         curvature: round($derived['curvature'][$index], 3),
-                        cover: $coverValue,
+                        cover: StandCode::cover($packed),
                         edgeDistanceMeters: $edgeDistance,
                         waterDistanceMeters: $towardsWater[$index],
+                        hostTree: StandCode::host($packed),
+                        canopy: StandCode::canopy($packed),
                     ),
                 ];
             }

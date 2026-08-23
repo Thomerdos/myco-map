@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Infrastructure\LandCover;
 
 use App\Domain\Geo\BoundingBox;
+use App\Domain\Terrain\CanopyClosure;
 use App\Domain\Terrain\ForestCover;
 use App\Domain\Terrain\ForestPolygon;
+use App\Domain\Terrain\HostTree;
 use App\Domain\Terrain\LandCoverSource;
 use Psr\Log\LoggerInterface;
 
@@ -74,14 +76,21 @@ final class BdForetLandCover implements LandCoverSource
         $chunk = [];
 
         foreach ($this->features() as $feature) {
-            $cover = ForestCover::fromBdForetCode($this->codeOf($feature));
+            $code = $this->codeOf($feature);
+            $cover = ForestCover::fromBdForetCode($code);
             $geometry = $feature['geometry'] ?? null;
             if (!\is_array($geometry)) {
                 continue;
             }
 
             foreach ($this->polygonsOf($geometry) as $rings) {
-                $polygon = $this->toForestPolygon($cover, $rings, $bounds);
+                $polygon = $this->toForestPolygon(
+                    $cover,
+                    HostTree::fromBdForetCode($code),
+                    CanopyClosure::fromBdForetCode($code),
+                    $rings,
+                    $bounds,
+                );
                 if ($polygon === null) {
                     continue;
                 }
@@ -250,14 +259,19 @@ final class BdForetLandCover implements LandCoverSource
      * @param list<list<array{0: float, 1: float}>> $rings first ring is the outline, the
      *                                                     remaining ones are clearings
      */
-    private function toForestPolygon(ForestCover $cover, array $rings, BoundingBox $bounds): ?ForestPolygon
-    {
+    private function toForestPolygon(
+        ForestCover $cover,
+        HostTree $host,
+        CanopyClosure $canopy,
+        array $rings,
+        BoundingBox $bounds,
+    ): ?ForestPolygon {
         $outer = array_shift($rings);
         if ($outer === null || !$this->touches($outer, $bounds)) {
             return null;
         }
 
-        return new ForestPolygon($cover, [$outer], array_values($rings));
+        return new ForestPolygon($cover, [$outer], array_values($rings), $host, $canopy);
     }
 
     /** @param list<array{0: float, 1: float}> $ring */

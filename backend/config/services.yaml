@@ -22,7 +22,7 @@ services:
     App\:
         resource: '../src/'
         exclude:
-            - '../src/Domain/**/{Coordinates,BoundingBox,Grid,GridWindow,SurveyArea,TerrainProfile,Exposure,ForestPolygon,WaterFeature,Species,HarvestWindow,AltitudeBand,SlopeBand,CriterionScore,SuitabilityScore,SeasonAssessment,WeatherConditions,WeatherField,LayerLegend}.php'
+            - '../src/Domain/**/{Coordinates,BoundingBox,Grid,GridWindow,SurveyArea,TerrainProfile,Exposure,ForestPolygon,WaterFeature,StandCode,Species,HarvestWindow,AltitudeBand,SlopeBand,CriterionScore,SuitabilityScore,SeasonAssessment,WeatherConditions,WeatherField,LayerLegend}.php'
             - '../src/Application/Cartography/{LayerGridQuery,LayerGridView}.php'
             - '../src/Application/Precomputation/PrecomputationReport.php'
             - '../src/Kernel.php'

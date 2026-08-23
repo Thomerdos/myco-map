@@ -39,6 +39,15 @@ function weatherTone(weather: LocationReport['weather']): string {
   if (days <= 14) return 'tone-window'
   return 'tone-late'
 }
+
+function highlightStand(highlight: Highlight): string {
+  const parts = [highlight.hostTreeCode ? highlight.hostTree : highlight.cover]
+  if (highlight.canopyCode) {
+    parts.push(highlight.canopy.toLowerCase())
+  }
+
+  return parts.join(', ')
+}
 </script>
 
 <template>
@@ -75,6 +84,14 @@ function weatherTone(weather: LocationReport['weather']): string {
         <div><dt>Pente</dt><dd>{{ props.report.terrain.slope }}°</dd></div>
         <div><dt>Exposition</dt><dd>{{ props.report.terrain.exposure }}</dd></div>
         <div><dt>Couvert</dt><dd>{{ props.report.terrain.cover }}</dd></div>
+        <div v-if="props.report.terrain.hostTreeCode">
+          <dt>Essence</dt>
+          <dd>{{ props.report.terrain.hostTree }}</dd>
+        </div>
+        <div v-if="props.report.terrain.canopyCode">
+          <dt>Densité</dt>
+          <dd>{{ props.report.terrain.canopy }}</dd>
+        </div>
         <div>
           <dt>Lisière</dt>
           <dd>
@@ -142,7 +159,7 @@ function weatherTone(weather: LocationReport['weather']): string {
             <span class="highlight-body">
               <strong>{{ Math.round(highlight.score) }} / 100</strong>
               <span class="highlight-meta">
-                {{ highlight.elevation }} m · versant {{ highlight.exposure }} · {{ highlight.cover }}
+                {{ highlight.elevation }} m · versant {{ highlight.exposure }} · {{ highlightStand(highlight) }}
               </span>
               <span class="highlight-reason">{{ highlight.reasons[0] }}</span>
             </span>

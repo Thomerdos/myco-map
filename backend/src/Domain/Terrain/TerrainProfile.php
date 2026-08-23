@@ -21,6 +21,8 @@ final readonly class TerrainProfile
         public ForestCover $cover,
         public int $edgeDistanceMeters,
         public int $waterDistanceMeters,
+        public HostTree $hostTree = HostTree::Unknown,
+        public CanopyClosure $canopy = CanopyClosure::Unknown,
     ) {
     }
 
@@ -48,5 +50,15 @@ final readonly class TerrainProfile
     public function isNearForestEdge(): bool
     {
         return abs($this->edgeDistanceMeters) <= 150;
+    }
+
+    /**
+     * Packed stand integer stored in the single SQLite `cover` column. Old archives that
+     * wrote only ForestCover 0–4 still round-trip: host and canopy sit in the high bits
+     * and therefore unpack as {@see HostTree::Unknown} / {@see CanopyClosure::Unknown}.
+     */
+    public function standCode(): int
+    {
+        return StandCode::pack($this->cover, $this->hostTree, $this->canopy);
     }
 }

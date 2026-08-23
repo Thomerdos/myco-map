@@ -77,11 +77,10 @@ de la plage (`LayerLegendFactory`).
 
 ### Restantes
 
-1. **Densité et fermeture du couvert absentes.** La surface terrière est la variable de peuplement
-   la plus corrélée aux récoltes, avec un optimum vers 15–20 m²/ha. BD Forêt distingue déjà forêt
-   fermée (`FF`) et ouverte (`FO`), information que `ForestCover` ne peut pas porter aujourd'hui :
-   l'ajouter voudrait dire élargir l'enum, donc toucher au schéma SQLite, à la légende et aux
-   affinités d'espèces. Piste complémentaire : NDVI Sentinel-2.
+1. **Surface terrière absente.** La fermeture du couvert (`FF` / `FO`) est désormais portée par
+   `CanopyClosure` et entre dans le score, mais ce n'est qu'une classe à deux niveaux. La
+   variable de peuplement la plus corrélée aux récoltes reste la surface terrière, avec un
+   optimum vers 15–20 m²/ha. Piste : NDVI Sentinel-2.
 2. **Sol et pH absents.** Comptent pour la trompette (calcaire) et la morille.
 3. **Délais de pousse par espèce non sourcés en revue à comité de lecture.** Voir la note en fin
    de fichier.
@@ -99,9 +98,29 @@ végétation.
 | | BD Forêt V2 | OpenStreetMap |
 |---|---|---|
 | Déclenchement | `backend/var/bdforet/formation-vegetale.geojsonl` présent (ou `BDFORET_PATH`) | sinon |
-| Classement | `ForestCover::fromBdForetCode()` sur `CODE_TFV` | `ForestCover::fromOsmTags()` |
+| Classement | `ForestCover`, `HostTree` et `CanopyClosure` depuis `CODE_TFV` | mêmes enums depuis les tags OSM |
 | Granularité | toute plage ≥ 0,5 ha, essence photo-interprétée | tags volontaires, souvent absents |
 | Licence | Licence Ouverte 2.0 | ODbL 1.0 |
+
+### Encodage `StandCode` (colonne SQLite `cover`)
+
+Le précalcul remplit une seule grille d'entiers. `StandCode` y empile trois attributs, bits
+de poids faible d'abord, pour ne pas changer le schéma :
+
+| Bits | Champ | Valeurs |
+|---|---|---|
+| 0–2 | `ForestCover` | 0 hors forêt, 1 indéterminé, 2 feuillus, 3 conifères, 4 mixte |
+| 3–6 | `HostTree` | 0 inconnue, puis hêtre, chêne, châtaignier, sapin/épicéa, pin, mélèze, douglas, peuplier, robinier, autre feuillu, autre conifère |
+| 7–8 | `CanopyClosure` | 0 inconnue, 1 ouverte (`FO`, 10–40 %), 2 fermée (`FF`, plus de 40 %) |
+
+Les archives écrites avant cet encodage ne stockaient que 0–4. Elles restent lisibles :
+`StandCode::cover()` prend les 3 bits bas, hôte et densité restent `Unknown`. Un précalcul
+nouveau (surtout avec BD Forêt) remplit les bits hauts. La couche « Couvert » de la carte
+continue de colorier uniquement la classe 0–4.
+
+`Species::coverSuitability()` combine : affinité feuillu/conifère/mixte (repli) ; affinité
+d'essence quand elle est connue ; modificateur de densité (fermé un peu mieux pour les
+espèces ectomycorhiziennes, ouvert un peu mieux pour la morille).
 
 **Format attendu.** GeoJSON une ligne par polygone (`ogr2ogr -f GeoJSONSeq`), en WGS84, produit
 par `./dev.sh bdforet`. L'adaptateur accepte aussi un `FeatureCollection` classique pour les
@@ -151,8 +170,8 @@ deux jours après l'orage déclenchant, avant toute fructification possible.
 1. Les poids sont dans `Criterion::weight()`. **Leur somme doit valoir 1,0.**
 2. `Criterion::rationale()` est affiché dans l'interface sous chaque critère : si un poids
    change, l'explication doit rester vraie.
-3. Les profils par espèce (tranches d'altitude, bandes de pente, affinités de couvert, délais de
-   pousse) sont dans `InMemorySpeciesCatalog.php`.
+3. Les profils par espèce (tranches d'altitude, bandes de pente, affinités de couvert, d'essence
+   et de densité, délais de pousse) sont dans `InMemorySpeciesCatalog.php`.
 4. Après changement, vérifier l'effet réel sur une emprise connue :
    `GET /api/layer?south=…&layer=potential&species=cepe` et comparer `statistics.average` /
    `statistics.best` avant / après. Un poids qui ne déplace rien sur la carte est un poids inutile.
