@@ -16,6 +16,7 @@ export interface Legend {
   unit: string | null
   categorical: boolean
   stops: LegendStop[]
+  emphasiseTop?: boolean
 }
 
 export interface HarvestWindow {
