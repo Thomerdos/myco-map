@@ -105,6 +105,11 @@ final class OverpassLandCover implements LandCoverSource
         return $chunks;
     }
 
+    /**
+     * `landcover=trees` is a widely used alternative to the two canonical forest tags, and
+     * `natural=scrub` matters here because mountain scrub often holds the birch and hazel
+     * that several target species associate with.
+     */
     private function forestQuery(BoundingBox $box): string
     {
         $bbox = $this->bbox($box);
@@ -114,8 +119,12 @@ final class OverpassLandCover implements LandCoverSource
             (
               way["landuse"="forest"]({$bbox});
               way["natural"="wood"]({$bbox});
+              way["landcover"="trees"]({$bbox});
+              way["natural"="scrub"]({$bbox});
               relation["landuse"="forest"]({$bbox});
               relation["natural"="wood"]({$bbox});
+              relation["landcover"="trees"]({$bbox});
+              relation["natural"="scrub"]({$bbox});
             );
             out geom;
             QL;

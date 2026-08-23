@@ -1,6 +1,8 @@
 parameters:
     app.elevation_cache_dir: '%kernel.project_dir%/var/elevation'
     app.landcover_cache_dir: '%kernel.project_dir%/var/landcover'
+    app.bdforet_path: '%env(default:app.bdforet_default_path:BDFORET_PATH)%'
+    app.bdforet_default_path: '%kernel.project_dir%/var/bdforet/formation-vegetale.geojsonl'
     app.elevation_zoom: 13
     app.area.name: 'Grenoble — Chartreuse, Belledonne, Vercors'
     app.area.south: 44.72
@@ -56,8 +58,15 @@ services:
         arguments:
             $cacheDirectory: '%app.landcover_cache_dir%'
 
+    # Uses BD Forêt when the converted dataset is present and falls back to OSM otherwise,
+    # so a fresh clone precomputes without requiring an IGN download. Water always from OSM.
+    App\Infrastructure\LandCover\BdForetLandCover:
+        arguments:
+            $fallback: '@App\Infrastructure\LandCover\OverpassLandCover'
+            $datasetPath: '%app.bdforet_path%'
+
     App\Domain\Terrain\ElevationSampler: '@App\Infrastructure\Elevation\TerrariumTileElevation'
-    App\Domain\Terrain\LandCoverSource: '@App\Infrastructure\LandCover\OverpassLandCover'
+    App\Domain\Terrain\LandCoverSource: '@App\Infrastructure\LandCover\BdForetLandCover'
     App\Domain\Terrain\TerrainCellStore: '@App\Infrastructure\Persistence\DbalTerrainCellStore'
     App\Domain\Weather\WeatherSource: '@App\Infrastructure\Weather\OpenMeteoWeather'
     App\Domain\Mycology\SpeciesCatalog: '@App\Infrastructure\Mycology\InMemorySpeciesCatalog'

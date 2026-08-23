@@ -119,6 +119,7 @@ Ouvrez [http://127.0.0.1:43123](http://127.0.0.1:43123).
 | `./dev.sh restore-data` | Restaure la base précalculée depuis `data/` |
 | `./dev.sh precompute` | Recalcule la base depuis les sources distantes |
 | `./dev.sh export-data` | Réexporte la base vers `data/` pour publication |
+| `./dev.sh bdforet <shp…>` | Convertit BD Forêt V2 pour un couvert forestier précis |
 | `./dev.sh backend` | API sur le port 8765 |
 | `./dev.sh frontend` | Interface sur le port 43123 |
 
@@ -141,16 +142,35 @@ Toutes gratuites et sans clé d'API :
 | [Open-Meteo](https://open-meteo.com/) | Pluie, température, humidité, humidité du sol |
 | [OpenTopoMap](https://opentopomap.org/) · OSM · Esri | Fonds de carte |
 
-### Aucune API payante n'est nécessaire
+### Couvert forestier précis avec BD Forêt V2 (optionnel)
 
-Deux pistes payantes ou sur inscription pourraient affiner le modèle plus tard, sans être requises :
+Par défaut le couvert vient d'OpenStreetMap, où beaucoup de boisements ne portent aucun tag
+d'essence et finissent en « essence indéterminée » — une classe qui note pareil pour toutes les
+espèces. **BD Forêt® V2** de l'IGN décrit la formation végétale de chaque plage de 0,5 ha et plus,
+ce qui rend le critère de couvert (18 % du score) réellement discriminant.
 
-- **IGN Géoservices — BD Forêt V2** : essences forestières bien plus précises qu'OSM. Gratuit sur inscription.
-- **Copernicus / Sentinel-2** : indice de végétation et fermeture du couvert, utile pour détecter les coupes récentes.
+1. Téléchargez les départements voulus sur [geoservices.ign.fr/bdforet](https://geoservices.ign.fr/bdforet)
+   — gratuit, Licence Ouverte. Pour cette zone : **Isère**, plus **Drôme** et **Savoie** pour les
+   franges du Vercors et de Belledonne.
+2. Convertissez-les (nécessite `gdal-bin` pour `ogr2ogr`) :
+
+```bash
+./dev.sh bdforet /chemin/vers/FORMATION_VEGETALE.shp
+./dev.sh precompute
+```
+
+La conversion écrit `backend/var/bdforet/formation-vegetale.geojsonl` (GeoJSON une ligne par
+polygone, reprojeté en WGS84). Dès que ce fichier existe, il est utilisé automatiquement ; sinon
+l'application retombe sur OpenStreetMap sans rien casser. L'hydrographie vient toujours d'OSM.
+Un autre emplacement se déclare avec la variable d'environnement `BDFORET_PATH`.
+
+**Copernicus / Sentinel-2** reste une piste non implémentée : indice de végétation et fermeture du
+couvert, utiles pour la densité du peuplement et les coupes récentes.
 
 ## Limites connues
 
-- Les essences OSM restent approximatives : beaucoup de polygones ne portent pas de tag `leaf_type`, classés alors « essence indéterminée ».
+- Les essences OSM restent approximatives : beaucoup de polygones ne portent pas de tag `leaf_type`, classés alors « essence indéterminée ». BD Forêt V2 lève cette limite (voir ci-dessus).
+- La densité et la fermeture du couvert ne sont pas modélisées, alors que la surface terrière est la variable de peuplement la plus corrélée aux récoltes.
 - Le modèle ne connaît ni la nature géologique du sol ni le pH, qui comptent notamment pour la trompette et la morille.
 - Les fenêtres de cueillette sont calées sur des moyennes régionales, pas sur la phénologie de l'année en cours.
 - La pression de cueillette et l'accessibilité réelle (propriété privée, réglementation locale) ne sont pas modélisées.
