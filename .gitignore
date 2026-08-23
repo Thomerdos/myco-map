@@ -1,0 +1,5 @@
+/vendor/
+composer
+composer.phar
+.env
+.env.local
