@@ -18,6 +18,7 @@ const error = ref<string | null>(null)
 
 const currentRegion = computed(() => regions.value.find((r) => r.id === selectedRegion.value))
 const currentBounds = ref<{ south: number; west: number; north: number; east: number } | null>(null)
+const pendingInitialLoad = ref(true)
 
 onMounted(async () => {
   try {
@@ -25,7 +26,6 @@ onMounted(async () => {
     speciesList.value = await fetchSpecies()
     if (currentRegion.value) {
       currentBounds.value = { ...currentRegion.value.bounds }
-      await loadMap()
     }
   } catch (e) {
     error.value = 'Impossible de contacter l\'API backend.'
@@ -35,10 +35,9 @@ onMounted(async () => {
 
 watch([selectedRegion, selectedSpecies, resolution], async () => {
   selectedCell.value = null
-  if (currentRegion.value) {
-    currentBounds.value = { ...currentRegion.value.bounds }
+  if (currentBounds.value) {
+    await loadMap(currentBounds.value)
   }
-  await loadMap()
 })
 
 async function loadMap(bounds = currentBounds.value) {
@@ -62,6 +61,10 @@ async function loadMap(bounds = currentBounds.value) {
 
 function onBoundsChange(bounds: { south: number; west: number; north: number; east: number }) {
   currentBounds.value = bounds
+  if (pendingInitialLoad.value) {
+    pendingInitialLoad.value = false
+    void loadMap(bounds)
+  }
 }
 
 async function refreshVisibleArea() {
