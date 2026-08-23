@@ -1,0 +1,6 @@
+/vendor/
+/var/
+/.env.local
+/.env.local.php
+/.env.*.local
+/composer.phar
