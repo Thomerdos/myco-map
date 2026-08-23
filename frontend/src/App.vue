@@ -14,6 +14,7 @@ const activeLayer = ref('potential')
 const activeSpecies = ref('cepe')
 const opacity = ref(0.72)
 const showContours = ref(false)
+const showSpots = ref(true)
 const basemap = ref('topo')
 const selectedPoint = ref<{ lat: number; lng: number } | null>(null)
 
@@ -142,6 +143,7 @@ function onSpeciesChange(species: string) {
         :active-species="activeSpecies"
         :opacity="opacity"
         :show-contours="showContours"
+        :show-spots="showSpots"
         :basemap="basemap"
         :grid="grid"
         :loading="loadingLayer"
@@ -149,6 +151,7 @@ function onSpeciesChange(species: string) {
         @update:active-species="onSpeciesChange"
         @update:opacity="opacity = $event"
         @update:show-contours="showContours = $event"
+        @update:show-spots="showSpots = $event"
         @update:basemap="basemap = $event"
       />
 
@@ -159,6 +162,7 @@ function onSpeciesChange(species: string) {
           :zoom="mapZoom"
           :opacity="opacity"
           :show-contours="showContours"
+          :show-spots="showSpots"
           :basemap="basemap"
           :selected="selectedPoint"
           @viewport-changed="onViewportChanged"

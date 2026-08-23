@@ -11,12 +11,24 @@ const emit = defineEmits<{
   highlightPicked: [point: { lat: number; lng: number }]
 }>()
 
-function barColor(value: number): string {
-  if (value >= 78) return '#1c7a3e'
-  if (value >= 62) return '#79b03a'
-  if (value >= 45) return '#d8b845'
-  if (value >= 25) return '#c98a3a'
-  return '#a35347'
+// Same hue progression as the map ramp, darkened: these are read as text and as thin bars
+// on a cream panel, where the bright end of the raster palette would be illegible.
+function scoreColor(score: number): string {
+  if (score >= 94) return '#a86a00'
+  if (score >= 87) return '#c2600f'
+  if (score >= 78) return '#a8384f'
+  if (score >= 64) return '#6f4a78'
+  if (score >= 45) return '#4a4a7a'
+  return '#5b5f6b'
+}
+
+/** A criterion is a plain 0–100 rating, so it keeps an even ramp rather than the score thresholds. */
+function criterionColor(value: number): string {
+  if (value >= 80) return '#c2600f'
+  if (value >= 60) return '#a8384f'
+  if (value >= 40) return '#6f4a78'
+  if (value >= 20) return '#4a4a7a'
+  return '#5b5f6b'
 }
 </script>
 
@@ -24,7 +36,7 @@ function barColor(value: number): string {
   <aside class="panel">
     <section v-if="props.report" class="block">
       <header class="score-header">
-        <div class="score-value" :style="{ color: barColor(props.report.score) }">
+        <div class="score-value" :style="{ color: scoreColor(props.report.score) }">
           {{ Math.round(props.report.score) }}
           <span>/ 100</span>
         </div>
@@ -65,7 +77,7 @@ function barColor(value: number): string {
           <div class="criterion-track">
             <div
               class="criterion-fill"
-              :style="{ width: `${criterion.value}%`, background: barColor(criterion.value) }"
+              :style="{ width: `${criterion.value}%`, background: criterionColor(criterion.value) }"
             />
           </div>
           <p class="criterion-note">{{ criterion.explanation }}</p>
@@ -76,7 +88,7 @@ function barColor(value: number): string {
       <ul class="other-species">
         <li v-for="item in props.report.allSpecies" :key="item.id">
           <span>{{ item.name }}</span>
-          <span class="other-score" :style="{ color: barColor(item.score) }">
+          <span class="other-score" :style="{ color: scoreColor(item.score) }">
             {{ Math.round(item.score) }}
             <em v-if="!item.inSeason">hors saison</em>
           </span>
@@ -94,10 +106,16 @@ function barColor(value: number): string {
 
     <section v-if="props.highlights.length > 0" class="block">
       <h3 class="block-title">Meilleurs secteurs visibles</h3>
+      <p class="highlights-note">
+        Les {{ props.highlights.length }} meilleurs points de l'emprise affichée, classés par
+        score et espacés d'au moins 900 m. Ils portent le même numéro sur la carte.
+      </p>
       <ol class="highlights">
         <li v-for="(highlight, index) in props.highlights" :key="`${highlight.lat}-${highlight.lng}`">
           <button type="button" @click="emit('highlightPicked', { lat: highlight.lat, lng: highlight.lng })">
-            <span class="rank">{{ index + 1 }}</span>
+            <span class="rank" :style="{ background: scoreColor(highlight.score) }">
+              {{ index + 1 }}
+            </span>
             <span class="highlight-body">
               <strong>{{ Math.round(highlight.score) }} / 100</strong>
               <span class="highlight-meta">
@@ -271,6 +289,13 @@ function barColor(value: number): string {
   color: #6a6153;
 }
 
+.highlights-note {
+  margin: 0 0 0.5rem;
+  font-size: 0.73rem;
+  line-height: 1.35;
+  color: #7d7463;
+}
+
 .highlights {
   margin: 0;
   padding: 0;
@@ -301,8 +326,7 @@ function barColor(value: number): string {
   flex: 0 0 20px;
   height: 20px;
   border-radius: 50%;
-  background: #14342a;
-  color: #f4f1e6;
+  color: #f8f5ec;
   font-size: 0.7rem;
   font-weight: 700;
   display: flex;
