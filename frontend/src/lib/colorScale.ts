@@ -50,15 +50,40 @@ export function createColorScale(legend: Legend): (value: number) => Rgb {
   }
 }
 
+const FADE_FLOOR = 0.05
+const FADE_EXPONENT = 1.8
+
+/**
+ * Opacity ramp for legends whose lower half carries no usable signal. Veiling the whole
+ * map at a uniform opacity hides the basemap everywhere and gives poor spots the same
+ * visual weight as good ones; fading them out instead leaves the eye with only the cells
+ * worth walking to.
+ */
+export function createOpacityRamp(legend: Legend): (value: number) => number {
+  const min = legend.stops[0].value
+  const max = legend.stops[legend.stops.length - 1].value
+  const span = max - min || 1
+
+  return (value: number) => {
+    const position = Math.max(0, Math.min(1, (value - min) / span))
+
+    return FADE_FLOOR + (1 - FADE_FLOOR) * position ** FADE_EXPONENT
+  }
+}
+
 export function legendGradient(legend: Legend): string {
   if (legend.categorical) return ''
   const min = legend.stops[0].value
   const max = legend.stops[legend.stops.length - 1].value
   const span = max - min || 1
+  const ramp = legend.emphasiseTop ? createOpacityRamp(legend) : null
 
-  const parts = legend.stops.map(
-    (stop) => `${stop.color} ${Math.round(((stop.value - min) / span) * 100)}%`,
-  )
+  const parts = legend.stops.map((stop) => {
+    const { r, g, b } = hexToRgb(stop.color)
+    const opacity = ramp ? ramp(stop.value) : 1
+
+    return `rgb(${r} ${g} ${b} / ${Math.round(opacity * 100)}%) ${Math.round(((stop.value - min) / span) * 100)}%`
+  })
 
   return `linear-gradient(to right, ${parts.join(', ')})`
 }

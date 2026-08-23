@@ -1,5 +1,5 @@
 import type { LayerGrid } from '../types'
-import { createColorScale } from './colorScale'
+import { createColorScale, createOpacityRamp } from './colorScale'
 
 /**
  * Paints the value grid into an RGBA image, one pixel per cell. Leaflet then scales it
@@ -16,7 +16,8 @@ export function paintLayer(grid: LayerGrid, opacity: number): string {
 
   const image = context.createImageData(grid.columns, grid.rows)
   const scale = createColorScale(grid.legend)
-  const alpha = Math.round(Math.max(0, Math.min(1, opacity)) * 255)
+  const ramp = grid.legend.emphasiseTop ? createOpacityRamp(grid.legend) : null
+  const alpha = Math.max(0, Math.min(1, opacity))
 
   for (let i = 0; i < grid.values.length; i++) {
     const value = grid.values[i]
@@ -31,7 +32,7 @@ export function paintLayer(grid: LayerGrid, opacity: number): string {
     image.data[offset] = r
     image.data[offset + 1] = g
     image.data[offset + 2] = b
-    image.data[offset + 3] = alpha
+    image.data[offset + 3] = Math.round((ramp ? alpha * ramp(value) : alpha) * 255)
   }
 
   context.putImageData(image, 0, 0)
