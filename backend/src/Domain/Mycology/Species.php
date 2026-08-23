@@ -26,6 +26,12 @@ final readonly class Species
         public EdgeAffinity $edgeAffinity,
         public float $moisturePreference,
         public bool $requiresForest = true,
+        /** First day after a soaking rain when fruitbodies start to be plausible. */
+        public int $flushDelayMinDays = 7,
+        /** Day after the soaking rain when fruiting usually peaks for this species. */
+        public int $flushDelayPeakDays = 11,
+        /** Beyond this, the flush from that rain is largely spent. */
+        public int $flushDelayMaxDays = 18,
     ) {
     }
 

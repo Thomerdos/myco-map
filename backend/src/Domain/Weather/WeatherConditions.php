@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Domain\Weather;
 
 /**
- * Weather aggregated over the windows that actually matter for fruiting:
- * a soaking rain 5 to 14 days ago triggers the flush, recent rain keeps the
- * litter humid while it develops.
+ * Weather windows that drive fruiting, plus the age of the last soaking rain.
+ *
+ * Mycelium does not fruit the day after a storm: boletes around Grenoble typically
+ * need roughly a week to a fortnight after a marked rainy spell. Keeping
+ * {@see $daysSinceSoakingRain} explicit is what lets the score stay honest in the
+ * days right after a drought-breaking rain.
  */
 final readonly class WeatherConditions
 {
@@ -18,20 +21,27 @@ final readonly class WeatherConditions
         public float $meanTemperatureCelsius,
         public float $relativeHumidityPercent,
         public float $soilMoisture,
+        public ?int $daysSinceSoakingRain = null,
+        public float $soakingRainMillimetres = 0.0,
     ) {
     }
 
     public function label(): string
     {
+        if ($this->daysSinceSoakingRain === null || $this->soakingRainMillimetres < 15.0) {
+            return $this->fortnightRainMillimetres < 10.0 ? 'Sec' : 'Sans pluie déclenchante claire';
+        }
+
         return match (true) {
-            $this->triggerRainMillimetres >= 30 && $this->recentRainMillimetres >= 3 => 'Très favorable',
-            $this->triggerRainMillimetres >= 20 => 'Favorable',
-            $this->triggerRainMillimetres >= 8 => 'Moyen',
-            default => 'Sec',
+            $this->daysSinceSoakingRain <= 3 => 'Incubation — trop tôt pour la pousse',
+            $this->daysSinceSoakingRain <= 6 => 'Mycélium en démarrage',
+            $this->daysSinceSoakingRain <= 14 => 'Fenêtre de pousse probable',
+            $this->daysSinceSoakingRain <= 20 => 'Fin de poussée',
+            default => 'Poussée passée',
         };
     }
 
-    /** @return array<string, float|string> */
+    /** @return array<string, float|int|string|null> */
     public function toArray(): array
     {
         return [
@@ -41,6 +51,8 @@ final readonly class WeatherConditions
             'temperature' => round($this->meanTemperatureCelsius, 1),
             'humidity' => round($this->relativeHumidityPercent),
             'soilMoisture' => round($this->soilMoisture, 3),
+            'daysSinceSoakingRain' => $this->daysSinceSoakingRain,
+            'soakingRain' => round($this->soakingRainMillimetres, 1),
             'label' => $this->label(),
         ];
     }

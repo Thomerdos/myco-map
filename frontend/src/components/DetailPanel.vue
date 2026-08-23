@@ -30,6 +30,15 @@ function criterionColor(value: number): string {
   if (value >= 20) return '#4a4a7a'
   return '#5b5f6b'
 }
+
+function weatherTone(weather: LocationReport['weather']): string {
+  const days = weather.daysSinceSoakingRain
+  if (days === null) return 'tone-dry'
+  if (days <= 3) return 'tone-early'
+  if (days <= 6) return 'tone-warming'
+  if (days <= 14) return 'tone-window'
+  return 'tone-late'
+}
 </script>
 
 <template>
@@ -51,6 +60,15 @@ function criterionColor(value: number): string {
         {{ props.report.coordinates.lng.toFixed(4) }}
       </p>
 
+      <div class="weather-card" :class="weatherTone(props.report.weather)">
+        <strong>{{ props.report.weather.label }}</strong>
+        <span v-if="props.report.weather.daysSinceSoakingRain !== null">
+          Dernière pluie marquante : {{ props.report.weather.soakingRain }}&nbsp;mm
+          il y a {{ props.report.weather.daysSinceSoakingRain }}&nbsp;j
+        </span>
+        <span v-else>Pas d'épisode déclenchant clair sur 15&nbsp;j</span>
+      </div>
+
       <h3 class="block-title">Ce que dit le terrain</h3>
       <dl class="terrain">
         <div><dt>Altitude</dt><dd>{{ props.report.terrain.elevation }} m</dd></div>
@@ -68,11 +86,15 @@ function criterionColor(value: number): string {
       </dl>
 
       <h3 class="block-title">Pourquoi ce score</h3>
+      <p class="criteria-intro">
+        Chaque barre est le score du critère sur ce point. Le pourcentage est son poids dans
+        le modèle — un critère à 2&nbsp;% affine le choix, il ne le décide pas.
+      </p>
       <ul class="criteria">
         <li v-for="criterion in props.report.breakdown" :key="criterion.criterion">
           <div class="criterion-head">
             <span>{{ criterion.label }}</span>
-            <span class="criterion-weight">{{ Math.round(criterion.weight * 100) }} %</span>
+            <span class="criterion-weight">poids {{ Math.round(criterion.weight * 100) }} %</span>
           </div>
           <div class="criterion-track">
             <div
@@ -80,6 +102,7 @@ function criterionColor(value: number): string {
               :style="{ width: `${criterion.value}%`, background: criterionColor(criterion.value) }"
             />
           </div>
+          <p class="criterion-rationale">{{ criterion.rationale }}</p>
           <p class="criterion-note">{{ criterion.explanation }}</p>
         </li>
       </ul>
@@ -105,10 +128,10 @@ function criterionColor(value: number): string {
     </section>
 
     <section v-if="props.highlights.length > 0" class="block">
-      <h3 class="block-title">Meilleurs secteurs visibles</h3>
+      <h3 class="block-title">Secteurs à explorer</h3>
       <p class="highlights-note">
-        Les {{ props.highlights.length }} meilleurs points de l'emprise affichée, classés par
-        score et espacés d'au moins 900 m. Ils portent le même numéro sur la carte.
+        Pistes classées dans la vue actuelle. Cliquez pour centrer la carte et ouvrir le détail —
+        ce ne sont pas des clusters de points.
       </p>
       <ol class="highlights">
         <li v-for="(highlight, index) in props.highlights" :key="`${highlight.lat}-${highlight.lng}`">
@@ -351,5 +374,52 @@ function criterionColor(value: number): string {
   color: #55503f;
   font-size: 0.72rem;
   line-height: 1.3;
+}
+
+.weather-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-top: 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.weather-card.tone-early {
+  background: #f3e6d2;
+  color: #7a4e12;
+}
+
+.weather-card.tone-warming {
+  background: #efe6c8;
+  color: #6a5310;
+}
+
+.weather-card.tone-window {
+  background: #ddecd8;
+  color: #1f5c32;
+}
+
+.weather-card.tone-late,
+.weather-card.tone-dry {
+  background: #ece7dc;
+  color: #5a5346;
+}
+
+.criteria-intro {
+  margin: 0 0 0.55rem;
+  font-size: 0.73rem;
+  line-height: 1.4;
+  color: #7d7463;
+}
+
+.criterion-rationale {
+  margin: 0.15rem 0 0.1rem;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: #5a5346;
+  font-style: italic;
 }
 </style>

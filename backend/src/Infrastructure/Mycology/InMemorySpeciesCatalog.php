@@ -72,6 +72,9 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 ],
                 edgeAffinity: EdgeAffinity::Indifferent,
                 moisturePreference: 0.62,
+                flushDelayMinDays: 8,
+                flushDelayPeakDays: 12,
+                flushDelayMaxDays: 16,
             ),
             new Species(
                 id: 'trompette',
@@ -139,6 +142,9 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 ],
                 edgeAffinity: EdgeAffinity::Edge,
                 moisturePreference: 0.75,
+                flushDelayMinDays: 5,
+                flushDelayPeakDays: 8,
+                flushDelayMaxDays: 13,
             ),
             new Species(
                 id: 'pied_mouton',
