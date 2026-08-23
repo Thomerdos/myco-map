@@ -2,12 +2,19 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-COMPOSER="${ROOT}/composer"
+if [[ -x "${ROOT}/composer" ]]; then
+  COMPOSER=(php "${ROOT}/composer")
+elif command -v composer >/dev/null 2>&1; then
+  COMPOSER=(composer)
+else
+  echo "Composer introuvable. Installez-le : https://getcomposer.org/download/"
+  exit 1
+fi
 
 backend() {
   cd "${ROOT}/backend"
   if [[ ! -d vendor ]]; then
-    php "${COMPOSER}" install --no-interaction
+    "${COMPOSER[@]}" install --no-interaction
   fi
   echo "Backend API: http://127.0.0.1:8765"
   php -S 127.0.0.1:8765 -t public
