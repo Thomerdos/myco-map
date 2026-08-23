@@ -1,0 +1,170 @@
+export interface Bounds {
+  south: number
+  west: number
+  north: number
+  east: number
+}
+
+export interface LegendStop {
+  value: number
+  label: string
+  color: string
+}
+
+export interface Legend {
+  title: string
+  unit: string | null
+  categorical: boolean
+  stops: LegendStop[]
+}
+
+export interface HarvestWindow {
+  start: string
+  end: string
+  peak: boolean
+  label: string
+}
+
+export interface SpeciesSummary {
+  id: string
+  name: string
+  scientificName: string
+  summary: string
+  hostTrees: string
+  harvestWindows: HarvestWindow[]
+  altitude: {
+    min: number
+    optimumLow: number
+    optimumHigh: number
+    max: number
+  }
+}
+
+export interface LayerDescriptor {
+  id: string
+  label: string
+  categorical: boolean
+  unit: string | null
+  requiresSpecies: boolean
+}
+
+export interface MapContext {
+  area: {
+    name: string
+    bounds: Bounds
+    center: { lat: number; lng: number }
+    zoom: number
+    cellSize: number
+  }
+  ready: boolean
+  grid: {
+    cellSize: number
+    columns: number
+    rows: number
+    bounds: Bounds
+  } | null
+  layers: LayerDescriptor[]
+  species: SpeciesSummary[]
+}
+
+export interface Weather {
+  triggerRain: number
+  recentRain: number
+  fortnightRain: number
+  temperature: number
+  humidity: number
+  soilMoisture: number
+  label: string
+  degraded?: boolean
+}
+
+export interface Highlight {
+  lat: number
+  lng: number
+  score: number
+  level: string
+  levelLabel: string
+  elevation: number
+  exposure: string
+  cover: string
+  reasons: string[]
+}
+
+export interface LayerGrid {
+  layer: string
+  layerLabel: string
+  legend: Legend
+  bounds: Bounds
+  columns: number
+  rows: number
+  cellSize: number
+  values: (number | null)[]
+  statistics: {
+    cells: number
+    average: number | null
+    best: number | null
+    resolution: number
+  }
+  highlights: Highlight[]
+  weather: Weather
+  species: {
+    id: string
+    name: string
+    scientificName: string
+    summary: string
+    hostTrees: string
+    inSeason: boolean
+    activeWindow: HarvestWindow | null
+    nextWindow: HarvestWindow | null
+    harvestWindows: HarvestWindow[]
+  } | null
+}
+
+export interface CriterionDetail {
+  criterion: string
+  label: string
+  value: number
+  weight: number
+  explanation: string
+}
+
+export interface LocationReport {
+  coordinates: { lat: number; lng: number }
+  terrain: {
+    elevation: number
+    slope: number
+    aspect: number
+    exposure: string
+    coolness: number
+    curvature: number
+    cover: string
+    coverCode: number
+    edgeDistance: number
+    waterDistance: number
+    moisture: number
+  }
+  weather: Weather
+  species: {
+    id: string
+    name: string
+    scientificName: string
+    summary: string
+    hostTrees: string
+  }
+  score: number
+  level: string
+  levelLabel: string
+  inSeason: boolean
+  activeWindow: HarvestWindow | null
+  nextWindow: HarvestWindow | null
+  breakdown: CriterionDetail[]
+  drivers: CriterionDetail[]
+  allSpecies: {
+    id: string
+    name: string
+    score: number
+    level: string
+    levelLabel: string
+    inSeason: boolean
+  }[]
+}
