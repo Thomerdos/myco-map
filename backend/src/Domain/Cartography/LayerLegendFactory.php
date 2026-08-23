@@ -60,10 +60,15 @@ final readonly class LayerLegendFactory
                 ['value' => 300, 'label' => '300 m', 'color' => '#6aa84f'],
                 ['value' => 800, 'label' => 'Cœur de massif', 'color' => '#1d5c33'],
             ]),
+            // Soft beige→cyan disappears on the green OSM forest. Warm dry tones and
+            // saturated cool wet tones keep orographic contrast readable at typical
+            // trigger totals (often ~10–35 mm across a massif viewport).
             MapLayer::Rainfall => new LayerLegend($layer->label(), 'mm', false, [
-                ['value' => 0, 'label' => 'Sec', 'color' => '#e8d9b5'],
-                ['value' => 20, 'label' => '20 mm', 'color' => '#7fb7c9'],
-                ['value' => 45, 'label' => '45 mm et plus', 'color' => '#1d4e8a'],
+                ['value' => 0, 'label' => 'Sec', 'color' => '#f5c542'],
+                ['value' => 10, 'label' => '10 mm', 'color' => '#ff6b3d'],
+                ['value' => 20, 'label' => '20 mm', 'color' => '#d946ef'],
+                ['value' => 30, 'label' => '30 mm', 'color' => '#2563eb'],
+                ['value' => 45, 'label' => '45 mm et plus', 'color' => '#0b1f6b'],
             ]),
         };
     }
