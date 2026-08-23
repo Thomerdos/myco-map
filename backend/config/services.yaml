@@ -1,23 +1,63 @@
-# yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
-
-# This file is the entry point to configure your own services.
-# Files in the packages/ subdirectory configure your dependencies.
-# See also https://symfony.com/doc/current/service_container/import.html
-
-# Put parameters here that don't need to change on each machine where the app is deployed
-# https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
+    app.elevation_cache_dir: '%kernel.project_dir%/var/elevation'
+    app.landcover_cache_dir: '%kernel.project_dir%/var/landcover'
+    app.elevation_zoom: 13
+    app.area.name: 'Grenoble — Chartreuse, Belledonne, Vercors'
+    app.area.south: 44.72
+    app.area.west: 5.38
+    app.area.north: 45.45
+    app.area.east: 6.30
+    app.area.center_lat: 45.19
+    app.area.center_lng: 5.79
+    app.area.zoom: 11
+    app.area.cell_size: 100
 
 services:
-    # default configuration for services in *this* file
     _defaults:
-        autowire: true      # Automatically injects dependencies in your services.
-        autoconfigure: true # Automatically registers your services as commands, event subscribers, etc.
+        autowire: true
+        autoconfigure: true
 
-    # makes classes in src/ available to be used as services
-    # this creates a service per class whose id is the fully-qualified class name
     App\:
         resource: '../src/'
+        exclude:
+            - '../src/Domain/**/{Coordinates,BoundingBox,Grid,GridWindow,SurveyArea,TerrainProfile,Exposure,ForestPolygon,WaterFeature,Species,HarvestWindow,AltitudeBand,SlopeBand,CriterionScore,SuitabilityScore,SeasonAssessment,WeatherConditions,WeatherField,LayerLegend}.php'
+            - '../src/Application/Cartography/{LayerGridQuery,LayerGridView}.php'
+            - '../src/Application/Precomputation/PrecomputationReport.php'
+            - '../src/Kernel.php'
 
-    # add more service definitions when explicit configuration is needed
-    # please note that last definitions always *replace* previous ones
+    App\Domain\Geo\SurveyArea:
+        arguments:
+            $name: '%app.area.name%'
+            $bounds: '@app.area.bounds'
+            $defaultCenter: '@app.area.center'
+            $defaultZoom: '%app.area.zoom%'
+            $cellSizeMeters: '%app.area.cell_size%'
+
+    app.area.bounds:
+        class: App\Domain\Geo\BoundingBox
+        arguments:
+            $south: '%app.area.south%'
+            $west: '%app.area.west%'
+            $north: '%app.area.north%'
+            $east: '%app.area.east%'
+
+    app.area.center:
+        class: App\Domain\Geo\Coordinates
+        arguments:
+            $latitude: '%app.area.center_lat%'
+            $longitude: '%app.area.center_lng%'
+
+    App\Infrastructure\Elevation\TerrariumTileElevation:
+        arguments:
+            $cacheDirectory: '%app.elevation_cache_dir%'
+            $zoom: '%app.elevation_zoom%'
+
+    App\Infrastructure\LandCover\OverpassLandCover:
+        arguments:
+            $cacheDirectory: '%app.landcover_cache_dir%'
+
+    App\Domain\Terrain\ElevationSampler: '@App\Infrastructure\Elevation\TerrariumTileElevation'
+    App\Domain\Terrain\LandCoverSource: '@App\Infrastructure\LandCover\OverpassLandCover'
+    App\Domain\Terrain\TerrainCellStore: '@App\Infrastructure\Persistence\DbalTerrainCellStore'
+    App\Domain\Weather\WeatherSource: '@App\Infrastructure\Weather\OpenMeteoWeather'
+    App\Domain\Mycology\SpeciesCatalog: '@App\Infrastructure\Mycology\InMemorySpeciesCatalog'

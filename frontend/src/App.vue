@@ -1,153 +1,186 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import ForageMap from './components/ForageMap.vue'
-import InfoPanel from './components/InfoPanel.vue'
-import { fetchMap, fetchRegions, fetchSpecies } from './api'
-import type { MapCell, MapResponse, MapViewMode, Region, Species } from './types'
+import { computed, onMounted, ref } from 'vue'
+import ControlPanel from './components/ControlPanel.vue'
+import DetailPanel from './components/DetailPanel.vue'
+import MycoMap from './components/MycoMap.vue'
+import { fetchContext, fetchLayer, fetchLocation } from './lib/api'
+import type { Bounds, LayerGrid, LocationReport, MapContext } from './types'
 
-const regions = ref<Region[]>([])
-const speciesList = ref<Species[]>([])
-const selectedRegion = ref('chartreuse')
-const selectedSpecies = ref('cepe')
-const viewMode = ref<MapViewMode>('grid')
-const resolution = ref(500)
-const mapData = ref<MapResponse | null>(null)
-const selectedCell = ref<MapCell | null>(null)
-const loading = ref(false)
+const context = ref<MapContext | null>(null)
+const grid = ref<LayerGrid | null>(null)
+const report = ref<LocationReport | null>(null)
+
+const activeLayer = ref('potential')
+const activeSpecies = ref('cepe')
+const opacity = ref(0.72)
+const showContours = ref(false)
+const basemap = ref('topo')
+const selectedPoint = ref<{ lat: number; lng: number } | null>(null)
+
+const loadingLayer = ref(false)
+const loadingReport = ref(false)
 const error = ref<string | null>(null)
+const notReady = ref(false)
 
-const currentRegion = computed(() => regions.value.find((r) => r.id === selectedRegion.value))
-const currentBounds = ref<{ south: number; west: number; north: number; east: number } | null>(null)
-const pendingInitialLoad = ref(true)
+let viewport: Bounds | null = null
+let reloadTimer: number | undefined
+let requestToken = 0
+
+const mapCenter = computed(() => context.value?.area.center ?? { lat: 45.19, lng: 5.79 })
+const mapZoom = computed(() => context.value?.area.zoom ?? 11)
 
 onMounted(async () => {
   try {
-    regions.value = await fetchRegions()
-    speciesList.value = await fetchSpecies()
-    if (currentRegion.value) {
-      currentBounds.value = { ...currentRegion.value.bounds }
+    const loaded = await fetchContext()
+    context.value = loaded
+    notReady.value = !loaded.ready
+    if (loaded.ready && viewport) {
+      await loadLayer(viewport)
     }
-  } catch (e) {
-    error.value = 'Impossible de contacter l\'API backend.'
-    console.error(e)
+  } catch (cause) {
+    error.value = "Impossible de joindre l'API. Vérifiez que le backend tourne sur le port 8765."
+    console.error(cause)
   }
 })
 
-watch([selectedRegion, selectedSpecies, resolution], async () => {
-  selectedCell.value = null
-  if (currentBounds.value) {
-    await loadMap(currentBounds.value)
-  }
-})
+function onViewportChanged(bounds: Bounds) {
+  viewport = bounds
+  scheduleReload()
+}
 
-async function loadMap(bounds = currentBounds.value) {
-  if (!bounds) return
-  loading.value = true
+function scheduleReload() {
+  window.clearTimeout(reloadTimer)
+  reloadTimer = window.setTimeout(() => {
+    if (viewport && context.value?.ready) {
+      void loadLayer(viewport)
+    }
+  }, 280)
+}
+
+async function loadLayer(bounds: Bounds) {
+  const token = ++requestToken
+  loadingLayer.value = true
   error.value = null
+
   try {
-    mapData.value = await fetchMap({
-      region: selectedRegion.value,
-      species: selectedSpecies.value,
-      resolution: resolution.value,
-      ...bounds,
+    const result = await fetchLayer({
+      layer: activeLayer.value,
+      species: activeSpecies.value,
+      bounds,
+      maxCells: 45000,
     })
-  } catch (e) {
-    error.value = 'Erreur lors du chargement de la carte. Réessayez dans quelques secondes.'
-    console.error(e)
+    if (token === requestToken) {
+      grid.value = result
+    }
+  } catch (cause) {
+    if (token === requestToken) {
+      error.value = cause instanceof Error ? cause.message : 'Erreur de chargement du masque.'
+    }
   } finally {
-    loading.value = false
+    if (token === requestToken) {
+      loadingLayer.value = false
+    }
   }
 }
 
-function onBoundsChange(bounds: { south: number; west: number; north: number; east: number }) {
-  currentBounds.value = bounds
-  if (pendingInitialLoad.value) {
-    pendingInitialLoad.value = false
-    void loadMap(bounds)
+async function onLocationPicked(point: { lat: number; lng: number }) {
+  selectedPoint.value = point
+  loadingReport.value = true
+
+  try {
+    report.value = await fetchLocation({
+      lat: point.lat,
+      lng: point.lng,
+      species: activeSpecies.value,
+    })
+  } catch (cause) {
+    report.value = null
+    console.error(cause)
+  } finally {
+    loadingReport.value = false
   }
 }
 
-async function refreshVisibleArea() {
-  if (currentBounds.value) {
-    await loadMap(currentBounds.value)
-  }
+function onLayerChange(layer: string) {
+  activeLayer.value = layer
+  if (viewport) void loadLayer(viewport)
 }
 
-function onCellSelect(cell: MapCell) {
-  selectedCell.value = cell
+function onSpeciesChange(species: string) {
+  activeSpecies.value = species
+  if (viewport) void loadLayer(viewport)
+  if (selectedPoint.value) void onLocationPicked(selectedPoint.value)
 }
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="shell">
     <header class="topbar">
-      <div>
-        <h1>Forage Mapper</h1>
-        <p>Chartreuse · Belledonne · Vercors — planification de sorties mycologiques</p>
+      <div class="brand">
+        <h1>Myco Map</h1>
+        <p>{{ context?.area.name ?? 'Grenoble — Chartreuse, Belledonne, Vercors' }}</p>
       </div>
-      <div class="controls">
-        <label>
-          Massif
-          <select v-model="selectedRegion">
-            <option v-for="region in regions" :key="region.id" :value="region.id">
-              {{ region.name }}
-            </option>
-          </select>
-        </label>
-        <label>
-          Espèce
-          <select v-model="selectedSpecies">
-            <option v-for="sp in speciesList" :key="sp.id" :value="sp.id">
-              {{ sp.name }}
-            </option>
-          </select>
-        </label>
-        <label>
-          Maille
-          <select v-model.number="resolution">
-            <option :value="250">250 m</option>
-            <option :value="500">500 m</option>
-            <option :value="750">750 m</option>
-          </select>
-        </label>
-        <label>
-          Affichage
-          <select v-model="viewMode">
-            <option value="grid">Quadrillage</option>
-            <option value="circles">Cercles</option>
-            <option value="heatmap">Heatmap</option>
-          </select>
-        </label>
-        <button type="button" class="btn" :disabled="loading" @click="refreshVisibleArea">
-          {{ loading ? 'Analyse…' : 'Analyser la zone visible' }}
-        </button>
+      <div class="status">
+        <span v-if="loadingLayer" class="pill loading">Calcul du masque…</span>
+        <span v-else-if="grid" class="pill">
+          {{ grid.layerLabel }} · maille {{ grid.statistics.resolution }} m
+        </span>
       </div>
     </header>
 
-    <div v-if="error" class="error">{{ error }}</div>
+    <p v-if="error" class="banner error">{{ error }}</p>
+    <p v-else-if="notReady" class="banner warning">
+      Les données ne sont pas encore précalculées. Lancez
+      <code>php bin/console app:precompute</code> dans le dossier <code>backend</code>.
+    </p>
 
     <main class="layout">
-      <section class="map-wrap">
-        <ForageMap
-          v-if="currentRegion"
-          :cells="mapData?.cells ?? []"
-          :center="currentRegion.center"
-          :view-mode="viewMode"
-          :resolution="resolution"
-          @cell-select="onCellSelect"
-          @bounds-change="onBoundsChange"
+      <ControlPanel
+        :layers="context?.layers ?? []"
+        :species="context?.species ?? []"
+        :active-layer="activeLayer"
+        :active-species="activeSpecies"
+        :opacity="opacity"
+        :show-contours="showContours"
+        :basemap="basemap"
+        :grid="grid"
+        :loading="loadingLayer"
+        @update:active-layer="onLayerChange"
+        @update:active-species="onSpeciesChange"
+        @update:opacity="opacity = $event"
+        @update:show-contours="showContours = $event"
+        @update:basemap="basemap = $event"
+      />
+
+      <section class="map-holder">
+        <MycoMap
+          :grid="grid"
+          :center="mapCenter"
+          :zoom="mapZoom"
+          :opacity="opacity"
+          :show-contours="showContours"
+          :basemap="basemap"
+          :selected="selectedPoint"
+          @viewport-changed="onViewportChanged"
+          @location-picked="onLocationPicked"
         />
       </section>
-      <InfoPanel :cell="selectedCell" :map-data="mapData" :loading="loading" />
+
+      <DetailPanel
+        :report="report"
+        :highlights="grid?.highlights ?? []"
+        :loading="loadingReport"
+        @highlight-picked="onLocationPicked"
+      />
     </main>
   </div>
 </template>
 
 <style>
 :root {
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
   color: #2b261f;
-  background: #ebe6dc;
+  background: #ece7dc;
 }
 
 * {
@@ -164,98 +197,111 @@ body {
 </style>
 
 <style scoped>
-.app-shell {
-  min-height: 100vh;
+.shell {
   display: flex;
   flex-direction: column;
+  height: 100vh;
 }
 
 .topbar {
-  background: #1f3d2b;
-  color: #f4f1ea;
-  padding: 0.85rem 1rem 1rem;
   display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
+  align-items: center;
   justify-content: space-between;
-  align-items: flex-end;
+  gap: 1rem;
+  padding: 0.7rem 1.1rem;
+  background: #14342a;
+  color: #f2efe4;
 }
 
-.topbar h1 {
+.brand h1 {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: 1.15rem;
+  letter-spacing: 0.02em;
 }
 
-.topbar p {
-  margin: 0.2rem 0 0;
-  font-size: 0.88rem;
-  opacity: 0.85;
+.brand p {
+  margin: 0.12rem 0 0;
+  font-size: 0.78rem;
+  opacity: 0.82;
 }
 
-.controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem;
-  align-items: end;
+.pill {
+  padding: 0.28rem 0.6rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 12%);
+  font-size: 0.74rem;
 }
 
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-select {
-  min-width: 8rem;
-  padding: 0.4rem 0.5rem;
-  border-radius: 6px;
-  border: none;
-}
-
-.btn {
-  background: #4caf50;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 0.55rem 0.85rem;
+.pill.loading {
+  background: #c98a3a;
+  color: #2b1c07;
   font-weight: 600;
-  cursor: pointer;
 }
 
-.btn:disabled {
-  opacity: 0.6;
-  cursor: wait;
+.banner {
+  margin: 0;
+  padding: 0.55rem 1.1rem;
+  font-size: 0.82rem;
 }
 
-.error {
-  background: #fdecea;
-  color: #a12622;
-  padding: 0.6rem 1rem;
+.banner.error {
+  background: #f8e0dc;
+  color: #8a2c22;
+}
+
+.banner.warning {
+  background: #f6ecd2;
+  color: #7a5312;
+}
+
+.banner code {
+  background: rgb(0 0 0 / 8%);
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
 }
 
 .layout {
   flex: 1;
+  min-height: 0;
   display: grid;
-  grid-template-columns: 1fr min(360px, 38vw);
+  grid-template-columns: minmax(240px, 288px) 1fr minmax(260px, 340px);
+}
+
+.map-holder {
+  position: relative;
   min-height: 0;
 }
 
-.map-wrap {
-  min-height: 420px;
-  height: calc(100vh - 120px);
-}
-
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .layout {
-    grid-template-columns: 1fr;
-    grid-template-rows: 55vh auto;
+    grid-template-columns: minmax(220px, 260px) 1fr;
   }
 
-  .map-wrap {
-    height: 55vh;
+  .layout > :last-child {
+    grid-column: 1 / -1;
+    border-left: none;
+    border-top: 1px solid #ded6c4;
+    max-height: 45vh;
+  }
+}
+
+@media (max-width: 760px) {
+  .shell {
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .map-holder {
+    height: 58vh;
+  }
+
+  .layout > :first-child {
+    border-right: none;
+    border-bottom: 1px solid #ded6c4;
   }
 }
 </style>
