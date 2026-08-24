@@ -6,7 +6,7 @@ L'application croise relief, couvert forestier, hydrographie et météo récente
 
 ## Ce que fait l'application
 
-- **Carte raster continue** à 100 m de résolution, lissée à l'affichage : pas de quadrillage visible, les zones épousent la forme réelle des forêts et du relief.
+- **Carte raster continue** à **50 m** de résolution : le couvert, le relief dérivé (pente, exposition, courbure) et les distances lisière / eau sont plus fins qu'à 100 m ; les masques continus sont lissés à l'affichage, le couvert reste catégoriel (carrés nets).
 - **Masques de critères** interchangeables : chance de trouver (score combiné), altitude, exposition, pente, couvert forestier, humidité topographique, distance à la lisière, pluie déclenchante.
 - **Six espèces** avec profils d'habitat distincts et fenêtres de cueillette : cèpe, trompette de la mort, chanterelles, girolle, pied de mouton, morille.
 - **Détail au clic** : altitude, pente, exposition, couvert, essence dominante, densité, distance lisière et eau, plus la décomposition complète du score critère par critère.
@@ -19,14 +19,16 @@ Modèle **par règles expertes**, volontairement transparent plutôt qu'une boî
 
 | Critère | Poids | Ce qui est évalué |
 |---|---|---|
-| Météo récente | 22 % | Pluie déclenchante J-14 à J-5, pluie des 5 derniers jours, température, humidité |
-| Couvert forestier | 18 % | Essence dominante et fermeture du couvert, avec repli feuillus / conifères / mixte |
-| Saison | 16 % | Position dans les fenêtres de cueillette de l'espèce |
-| Altitude | 15 % | Appartenance à la tranche altitudinale, en trapèze |
-| Exposition | 15 % | Fraîcheur du versant, **cible ajustée selon l'altitude** |
-| Humidité topographique | 8 % | Concavité du terrain, drainage, proximité de l'eau |
-| Position lisière | 4 % | Lisière recherchée ou cœur de massif selon l'espèce |
-| Pente | 2 % | Écart à la pente optimale |
+| Météo récente | 16 % | Pluie déclenchante, phénologie, température, humidité |
+| Couvert forestier | 14 % | Essence dominante / feu feuillus–conifères–mixte |
+| Saison | 13 % | Fenêtres de cueillette |
+| Altitude | 13 % | Tranche altitudinale |
+| Exposition | 13 % | Fraîcheur du versant (ajustée à l'altitude) |
+| Densité du peuplement | 10 % | Proxy FO/FF (surface terrière) |
+| Humidité topographique | 9 % | Concavité, drainage, proximité de l'eau |
+| Géologie / substrat | 6 % | Calcaire / siliceux / mixte (BRGM Charm-50) |
+| Position lisière | 4 % | Lisière vs cœur de massif |
+| Pente | 2 % | Effet négatif monotone |
 
 Le poids fort donné à l'exposition et son **ajustement altitudinal** sont propres au contexte montagnard : en bas les versants nord gardent l'humidité, plus haut les versants plus chauds prennent l'avantage.
 
@@ -109,7 +111,7 @@ Puis, dans deux terminaux :
 
 Ouvrez [http://127.0.0.1:43123](http://127.0.0.1:43123).
 
-`restore-data` décompresse l'archive de `data/` et évite complètement l'étape de précalcul. Pour recalculer depuis les sources distantes, utilisez `./dev.sh precompute`, puis `./dev.sh export-data` pour régénérer l'archive publiée.
+`restore-data` décompresse `data/myco-terrain-50m.sqlite.gz` et évite le précalcul. **Après le passage à 50 m**, une ancienne archive 100 m n'est plus utilisable : lancez `./dev.sh precompute` (idéalement avec BD Forêt via `./dev.sh bdforet`), puis `./dev.sh export-data` pour publier la nouvelle archive.
 
 ## Commandes disponibles
 
@@ -170,8 +172,8 @@ couvert, utiles pour la densité du peuplement et les coupes récentes.
 ## Limites connues
 
 - Les essences OSM restent approximatives : beaucoup de polygones ne portent pas de tag `leaf_type`, classés alors « essence indéterminée ». BD Forêt V2 lève cette limite (voir ci-dessus).
-- La fermeture du couvert (`FF` / `FO`) entre dans le score, mais la surface terrière (optimum vers 15–20 m²/ha) n'est pas mesurée. Piste : NDVI Sentinel-2.
-- Le modèle ne connaît ni la nature géologique du sol ni le pH, qui comptent notamment pour la trompette et la morille.
+- La densité de peuplement est un **proxy FO/FF** (pas de surface terrière en m²/ha). Piste : NDVI Sentinel-2.
+- La géologie Charm-50 donne un **substrat** (calcaire / siliceux / mixte), pas un pH de sol mesuré.
 - Les fenêtres de cueillette sont calées sur des moyennes régionales, pas sur la phénologie de l'année en cours.
 - La pression de cueillette et l'accessibilité réelle (propriété privée, réglementation locale) ne sont pas modélisées.
 

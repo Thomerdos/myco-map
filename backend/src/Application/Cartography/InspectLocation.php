@@ -6,7 +6,9 @@ namespace App\Application\Cartography;
 
 use App\Domain\Geo\Coordinates;
 use App\Domain\Geo\SurveyArea;
+use App\Domain\Mycology\FlushClock;
 use App\Domain\Mycology\SeasonAssessment;
+use App\Domain\Mycology\ScoringMode;
 use App\Domain\Mycology\SpeciesCatalog;
 use App\Domain\Mycology\SuitabilityCalculator;
 use App\Domain\Terrain\TerrainCellStore;
@@ -27,19 +29,23 @@ final readonly class InspectLocation
     }
 
     /** @return array<string, mixed>|null */
-    public function __invoke(Coordinates $point, string $speciesId, \DateTimeImmutable $date): ?array
-    {
+    public function __invoke(
+        Coordinates $point,
+        string $speciesId,
+        \DateTimeImmutable $date,
+        ScoringMode $mode = ScoringMode::Moment,
+    ): ?array {
         $profile = $this->cellStore->findNearest($point);
         if ($profile === null) {
             return null;
         }
 
-        $weather = $this->weatherSource->fieldFor($this->area->bounds)->at($profile->coordinates);
+        $weather = $this->weatherSource->fieldFor($this->area->bounds, $date)->at($profile->coordinates);
 
         $reports = [];
         foreach ($this->speciesCatalog->all() as $species) {
             $season = new SeasonAssessment($species, $date);
-            $score = $this->calculator->score($species, $profile, $weather, $season);
+            $score = $this->calculator->score($species, $profile, $weather, $season, $mode);
             $reports[$species->id] = [
                 'id' => $species->id,
                 'name' => $species->commonName,
@@ -52,7 +58,7 @@ final readonly class InspectLocation
 
         $species = $this->speciesCatalog->get($speciesId);
         $season = new SeasonAssessment($species, $date);
-        $score = $this->calculator->score($species, $profile, $weather, $season);
+        $score = $this->calculator->score($species, $profile, $weather, $season, $mode);
 
         return [
             'coordinates' => [
@@ -75,8 +81,12 @@ final readonly class InspectLocation
                 'edgeDistance' => $profile->edgeDistanceMeters,
                 'waterDistance' => $profile->waterDistanceMeters,
                 'moisture' => round($profile->moistureIndex() * 100),
+                'geology' => $profile->substrate->label(),
+                'geologyCode' => $profile->substrate->value,
             ],
-            'weather' => $weather->toArray(),
+            'weather' => FlushClock::decorate($weather, $species),
+            'scoringMode' => $mode->value,
+            'asOfDate' => $date->format('Y-m-d'),
             'species' => [
                 'id' => $species->id,
                 'name' => $species->commonName,

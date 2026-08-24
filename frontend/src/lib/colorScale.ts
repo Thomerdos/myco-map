@@ -50,24 +50,30 @@ export function createColorScale(legend: Legend): (value: number) => Rgb {
   }
 }
 
-const FADE_FLOOR = 0.05
-const FADE_EXPONENT = 1.8
+const FADE_FLOOR = 0.04
 
 /**
- * Opacity ramp for legends whose lower half carries no usable signal. Veiling the whole
- * map at a uniform opacity hides the basemap everywhere and gives poor spots the same
- * visual weight as good ones; fading them out instead leaves the eye with only the cells
- * worth walking to.
+ * Opacity ramp for the potential mask: cool scores stay almost transparent so the
+ * 70–85 plateau does not veil the map. Warm colour (the last two legend stops, from 90)
+ * is the only band that reads as a target.
  */
 export function createOpacityRamp(legend: Legend): (value: number) => number {
-  const min = legend.stops[0].value
-  const max = legend.stops[legend.stops.length - 1].value
-  const span = max - min || 1
+  const stops = legend.stops
+  const hotFrom = stops.length >= 2 ? stops[stops.length - 2].value : 90
+  const hotTo = stops[stops.length - 1]?.value ?? 96
+  const coolUntil = stops.length >= 3 ? stops[stops.length - 3].value : 78
 
   return (value: number) => {
-    const position = Math.max(0, Math.min(1, (value - min) / span))
-
-    return FADE_FLOOR + (1 - FADE_FLOOR) * position ** FADE_EXPONENT
+    if (value <= coolUntil) {
+      const t = Math.max(0, Math.min(1, value / (coolUntil || 1)))
+      return FADE_FLOOR + 0.10 * t * t
+    }
+    if (value < hotFrom) {
+      const t = (value - coolUntil) / (hotFrom - coolUntil || 1)
+      return 0.14 + 0.28 * t
+    }
+    const t = Math.max(0, Math.min(1, (value - hotFrom) / (hotTo - hotFrom || 1)))
+    return 0.55 + 0.45 * t
   }
 }
 

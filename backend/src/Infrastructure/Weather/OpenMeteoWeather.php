@@ -15,8 +15,8 @@ use Symfony\Contracts\Cache\ItemInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
- * Open-Meteo sampled on a small lattice across the area, so the rain gradient between
- * the Grésivaudan valley and the ridges is preserved instead of averaged away.
+ * Open-Meteo sampled on a small lattice across the area. One download covers past history
+ * plus two weeks of forecast so scores can be projected forward day by day.
  */
 final readonly class OpenMeteoWeather implements WeatherSource
 {
@@ -25,16 +25,12 @@ final readonly class OpenMeteoWeather implements WeatherSource
     private const TRIGGER_WINDOW_END = -5;
     private const RECENT_WINDOW_START = -4;
     private const FORTNIGHT_WINDOW_START = -13;
-
-    /** Published fruiting models relate yield to rain accumulated over roughly four weeks. */
     private const ACCUMULATION_WINDOW_START = -25;
-
-    /** The fortnight before the trigger window, to tell a drought-breaking spell apart. */
     private const PRECEDING_WINDOW_START = -29;
     private const PRECEDING_WINDOW_END = -15;
-
-    /** Enough history to cover {@see PRECEDING_WINDOW_START} plus a safety margin. */
     private const PAST_DAYS = 31;
+    /** Enough to project Score to J+14 from "today" in the response. */
+    private const FORECAST_DAYS = 16;
 
     public function __construct(
         private HttpClientInterface $httpClient,
@@ -43,15 +39,20 @@ final readonly class OpenMeteoWeather implements WeatherSource
     ) {
     }
 
-    public function fieldFor(BoundingBox $bounds): WeatherField
+    public function fieldFor(BoundingBox $bounds, ?\DateTimeImmutable $asOf = null): WeatherField
     {
+        $timezone = new \DateTimeZone('Europe/Paris');
+        $asOf = ($asOf ?? new \DateTimeImmutable('now', $timezone))
+            ->setTimezone($timezone)
+            ->setTime(12, 0);
+
         $cacheKey = sprintf(
-            'weather_%s_%s',
+            'weather_raw_%s_%s',
             md5(serialize($bounds->toArray())),
-            (new \DateTimeImmutable())->format('Y-m-d-H'),
+            (new \DateTimeImmutable('now', $timezone))->format('Y-m-d-H'),
         );
 
-        /** @var array{samples: list<array{lat: float, lng: float, values: array<string, float>}>, degraded: bool} $payload */
+        /** @var array{samples: list<array{lat: float, lng: float, daily: array<string, mixed>, hourly: array<string, mixed>}>, degraded: bool} $payload */
         $payload = $this->cache->get($cacheKey, function (ItemInterface $item) use ($bounds): array {
             $item->expiresAfter(3600 * 2);
 
@@ -60,7 +61,7 @@ final readonly class OpenMeteoWeather implements WeatherSource
 
         $samples = [];
         foreach ($payload['samples'] as $sample) {
-            $values = $sample['values'];
+            $values = $this->aggregate($sample['daily'], $sample['hourly'] ?? [], $asOf);
             $daysRaw = $values['daysSinceSoaking'] ?? -1.0;
             $samples[] = [
                 'point' => new Coordinates($sample['lat'], $sample['lng']),
@@ -75,6 +76,7 @@ final readonly class OpenMeteoWeather implements WeatherSource
                     soakingRainMillimetres: $values['soakingRain'] ?? 0.0,
                     accumulatedRainMillimetres: $values['accumulatedRain'] ?? 0.0,
                     precedingDryMillimetres: $values['precedingRain'] ?? 0.0,
+                    soakingEvents: $values['soakingEvents'] ?? [],
                 ),
             ];
         }
@@ -82,7 +84,12 @@ final readonly class OpenMeteoWeather implements WeatherSource
         return new WeatherField($samples, $payload['degraded']);
     }
 
-    /** @return array{samples: list<array{lat: float, lng: float, values: array<string, float>}>, degraded: bool} */
+    /**
+     * @return array{
+     *   samples: list<array{lat: float, lng: float, daily: array<string, mixed>, hourly: array<string, mixed>}>,
+     *   degraded: bool
+     * }
+     */
     private function download(BoundingBox $bounds): array
     {
         $latitudes = [];
@@ -109,7 +116,7 @@ final readonly class OpenMeteoWeather implements WeatherSource
                     'daily' => 'precipitation_sum,temperature_2m_mean',
                     'hourly' => 'relative_humidity_2m,soil_moisture_0_to_1cm',
                     'past_days' => self::PAST_DAYS,
-                    'forecast_days' => 1,
+                    'forecast_days' => self::FORECAST_DAYS,
                     'timezone' => 'Europe/Paris',
                 ],
                 'timeout' => 45,
@@ -136,7 +143,8 @@ final readonly class OpenMeteoWeather implements WeatherSource
             $samples[] = [
                 'lat' => (float) ($location['latitude'] ?? $latitudes[$index] ?? $bounds->center()->latitude),
                 'lng' => (float) ($location['longitude'] ?? $longitudes[$index] ?? $bounds->center()->longitude),
-                'values' => $this->aggregate($location),
+                'daily' => $location['daily'],
+                'hourly' => \is_array($location['hourly'] ?? null) ? $location['hourly'] : [],
             ];
         }
 
@@ -146,31 +154,34 @@ final readonly class OpenMeteoWeather implements WeatherSource
     }
 
     /**
-     * @param array<string, mixed> $location
+     * @param array<string, mixed> $daily
+     * @param array<string, mixed> $hourly
      * @return array<string, float>
      */
-    private function aggregate(array $location): array
+    private function aggregate(array $daily, array $hourly, \DateTimeImmutable $asOf): array
     {
-        $precipitation = array_map('floatval', $location['daily']['precipitation_sum'] ?? []);
-        $dates = array_values(array_map('strval', $location['daily']['time'] ?? []));
+        $precipitation = array_map('floatval', $daily['precipitation_sum'] ?? []);
+        $dates = array_values(array_map('strval', $daily['time'] ?? []));
         $temperatures = array_values(array_filter(
-            $location['daily']['temperature_2m_mean'] ?? [],
+            $daily['temperature_2m_mean'] ?? [],
             'is_numeric',
         ));
         $humidity = array_values(array_filter(
-            $location['hourly']['relative_humidity_2m'] ?? [],
+            $hourly['relative_humidity_2m'] ?? [],
             'is_numeric',
         ));
         $soilMoisture = array_values(array_filter(
-            $location['hourly']['soil_moisture_0_to_1cm'] ?? [],
+            $hourly['soil_moisture_0_to_1cm'] ?? [],
             'is_numeric',
         ));
+        $hourlyTimes = array_values(array_map('strval', $hourly['time'] ?? []));
 
         $dayCount = \count($precipitation);
-        $today = (new \DateTimeImmutable('today', new \DateTimeZone('Europe/Paris')))->format('Y-m-d');
-        $todayIndex = array_search($today, $dates, true);
-        if ($todayIndex === false) {
-            $todayIndex = max(0, $dayCount - 2);
+        $asOfKey = $asOf->format('Y-m-d');
+        $asOfIndex = array_search($asOfKey, $dates, true);
+        if ($asOfIndex === false) {
+            // Clamp to the last available day in the series.
+            $asOfIndex = max(0, $dayCount - 1);
         }
 
         $triggerRain = 0.0;
@@ -180,7 +191,7 @@ final readonly class OpenMeteoWeather implements WeatherSource
         $precedingRain = 0.0;
 
         for ($day = 0; $day < $dayCount; $day++) {
-            $offset = $day - $todayIndex;
+            $offset = $day - $asOfIndex;
             if ($offset > 0) {
                 continue;
             }
@@ -201,7 +212,17 @@ final readonly class OpenMeteoWeather implements WeatherSource
             }
         }
 
-        $soaking = $this->findSoakingEvent($precipitation, (int) $todayIndex);
+        $events = $this->findSoakingEvents($precipitation, (int) $asOfIndex);
+        $latest = $events[0] ?? ['daysSince' => null, 'millimetres' => 0.0];
+
+        // Ambient conditions around the target day (daily mean + ~3 days of hourly).
+        $tempSlice = [];
+        for ($day = max(0, $asOfIndex - 4); $day <= $asOfIndex && $day < \count($temperatures); $day++) {
+            $tempSlice[] = $temperatures[$day];
+        }
+
+        $humiditySlice = $this->hourlyAround($humidity, $hourlyTimes, $asOfKey, 72);
+        $soilSlice = $this->hourlyAround($soilMoisture, $hourlyTimes, $asOfKey, 48);
 
         return [
             'triggerRain' => $triggerRain,
@@ -209,25 +230,57 @@ final readonly class OpenMeteoWeather implements WeatherSource
             'fortnightRain' => $fortnightRain,
             'accumulatedRain' => $accumulatedRain,
             'precedingRain' => $precedingRain,
-            'temperature' => $this->mean(\array_slice($temperatures, -10)) ?? 12.0,
-            'humidity' => $this->mean(\array_slice($humidity, -72)) ?? 70.0,
-            'soilMoisture' => $this->mean(\array_slice($soilMoisture, -48)) ?? 0.3,
-            'daysSinceSoaking' => $soaking['daysSince'] ?? -1.0,
-            'soakingRain' => $soaking['millimetres'],
+            'temperature' => $this->mean($tempSlice) ?? 12.0,
+            'humidity' => $this->mean($humiditySlice) ?? 70.0,
+            'soilMoisture' => $this->mean($soilSlice) ?? 0.3,
+            'daysSinceSoaking' => $latest['daysSince'] ?? -1.0,
+            'soakingRain' => $latest['millimetres'],
+            'soakingEvents' => $events,
         ];
     }
 
     /**
-     * Last marked rainy spell: a day ≥ 10 mm expanded to neighbouring wet days.
-     * Fruiting clocks start at the *end* of that spell, not at its first shower.
+     * @param list<float|int|string> $values
+     * @param list<string> $times
+     * @return list<float|int|string>
+     */
+    private function hourlyAround(array $values, array $times, string $asOfKey, int $maxPoints): array
+    {
+        if ($values === [] || $times === []) {
+            return [];
+        }
+
+        $end = null;
+        for ($i = \count($times) - 1; $i >= 0; $i--) {
+            if (str_starts_with($times[$i], $asOfKey)) {
+                $end = $i;
+                break;
+            }
+        }
+        if ($end === null) {
+            $end = \count($values) - 1;
+        }
+
+        $start = max(0, $end - $maxPoints + 1);
+
+        return array_slice($values, $start, $end - $start + 1);
+    }
+
+    /**
+     * Every soaking spell in the series, newest first, so a later storm does not hide
+     * a flush already produced by an earlier one.
      *
      * @param list<float> $precipitation
-     * @return array{daysSince: ?float, millimetres: float}
+     * @return list<array{daysSince: int, millimetres: float}>
      */
-    private function findSoakingEvent(array $precipitation, int $todayIndex): array
+    private function findSoakingEvents(array $precipitation, int $asOfIndex): array
     {
-        for ($cursor = $todayIndex; $cursor >= 0; $cursor--) {
+        $events = [];
+        $cursor = $asOfIndex;
+
+        while ($cursor >= 0 && \count($events) < 6) {
             if ($precipitation[$cursor] < 10.0) {
+                --$cursor;
                 continue;
             }
 
@@ -237,7 +290,7 @@ final readonly class OpenMeteoWeather implements WeatherSource
             }
 
             $end = $cursor;
-            while ($end < $todayIndex && $precipitation[$end + 1] >= 5.0) {
+            while ($end < $asOfIndex && $precipitation[$end + 1] >= 5.0) {
                 ++$end;
             }
 
@@ -246,17 +299,17 @@ final readonly class OpenMeteoWeather implements WeatherSource
                 $millimetres += $precipitation[$day];
             }
 
-            if ($millimetres < 15.0) {
-                continue;
+            if ($millimetres >= 15.0) {
+                $events[] = [
+                    'daysSince' => $asOfIndex - $end,
+                    'millimetres' => $millimetres,
+                ];
             }
 
-            return [
-                'daysSince' => (float) ($todayIndex - $end),
-                'millimetres' => $millimetres,
-            ];
+            $cursor = $start - 1;
         }
 
-        return ['daysSince' => null, 'millimetres' => 0.0];
+        return $events;
     }
 
     /** @param list<float|int|string> $values */
@@ -269,24 +322,40 @@ final readonly class OpenMeteoWeather implements WeatherSource
         return array_sum(array_map('floatval', $values)) / \count($values);
     }
 
-    /** @return array{samples: list<array{lat: float, lng: float, values: array<string, float>}>, degraded: bool} */
+    /**
+     * @return array{
+     *   samples: list<array{lat: float, lng: float, daily: array<string, mixed>, hourly: array<string, mixed>}>,
+     *   degraded: bool
+     * }
+     */
     private function fallback(BoundingBox $bounds): array
     {
         $center = $bounds->center();
+        $timezone = new \DateTimeZone('Europe/Paris');
+        $dates = [];
+        $precip = [];
+        $temps = [];
+        $start = new \DateTimeImmutable('-31 days', $timezone);
+        for ($i = 0; $i < 47; $i++) {
+            $day = $start->modify(sprintf('+%d days', $i));
+            $dates[] = $day->format('Y-m-d');
+            $precip[] = $i >= 20 && $i <= 22 ? 12.0 : 1.5;
+            $temps[] = 12.5;
+        }
 
         return [
             'samples' => [[
                 'lat' => $center->latitude,
                 'lng' => $center->longitude,
-                'values' => [
-                    'triggerRain' => 18.0,
-                    'recentRain' => 4.0,
-                    'fortnightRain' => 28.0,
-                    'accumulatedRain' => 45.0,
-                    'precedingRain' => 20.0,
-                    'temperature' => 12.5,
-                    'humidity' => 72.0,
-                    'soilMoisture' => 0.3,
+                'daily' => [
+                    'time' => $dates,
+                    'precipitation_sum' => $precip,
+                    'temperature_2m_mean' => $temps,
+                ],
+                'hourly' => [
+                    'time' => [],
+                    'relative_humidity_2m' => [],
+                    'soil_moisture_0_to_1cm' => [],
                 ],
             ]],
             'degraded' => true,

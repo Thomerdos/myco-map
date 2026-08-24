@@ -7,6 +7,7 @@ namespace App\Domain\Mycology;
 use App\Domain\Terrain\CanopyClosure;
 use App\Domain\Terrain\ForestCover;
 use App\Domain\Terrain\HostTree;
+use App\Domain\Terrain\Substrate;
 
 final readonly class Species
 {
@@ -14,7 +15,8 @@ final readonly class Species
      * @param list<HarvestWindow> $harvestWindows
      * @param array<int, float> $coverAffinity ForestCover value => 0..1 (fallback when the host is unknown)
      * @param array<int, float> $hostAffinity HostTree value => 0..1 (used when the stand names a host)
-     * @param array<int, float> $canopyAffinity CanopyClosure value => multiplier around 1
+     * @param array<int, float> $standDensityAffinity CanopyClosure value => 0..1 (basal-area proxy)
+     * @param array<int, float> $geologyAffinity Substrate value => 0..1
      */
     public function __construct(
         public string $id,
@@ -30,14 +32,13 @@ final readonly class Species
         public EdgeAffinity $edgeAffinity,
         public float $moisturePreference,
         public bool $requiresForest = true,
-        /** First day after a soaking rain when fruitbodies start to be plausible. */
         public int $flushDelayMinDays = 7,
-        /** Day after the soaking rain when fruiting usually peaks for this species. */
         public int $flushDelayPeakDays = 11,
-        /** Beyond this, the flush from that rain is largely spent. */
         public int $flushDelayMaxDays = 18,
+        public int $flushPersistDays = 4,
         public array $hostAffinity = [],
-        public array $canopyAffinity = [],
+        public array $standDensityAffinity = [],
+        public array $geologyAffinity = [],
     ) {
     }
 
@@ -53,15 +54,12 @@ final readonly class Species
     }
 
     /**
-     * Coarse leaf-type affinity is the fallback. A known host replaces it (the host is
-     * what actually determines whether an ectomycorrhizal species can be present) except
-     * on open ground, which must stay collapsed. Closed canopy then slightly lifts most
-     * forest species; open canopy is slightly lower, except for morels.
+     * Coarse leaf-type affinity is the fallback. A known host replaces it. Canopy density
+     * is scored separately as {@see standDensitySuitability()} to avoid double-counting.
      */
     public function coverSuitability(
         ForestCover $cover,
         HostTree $host = HostTree::Unknown,
-        CanopyClosure $canopy = CanopyClosure::Unknown,
     ): float {
         $score = $this->coverAffinity[$cover->value] ?? 0.1;
 
@@ -69,23 +67,40 @@ final readonly class Species
             $score = $this->hostAffinity[$host->value] ?? $score;
         }
 
-        $score *= $this->canopyModifier($canopy);
-
         return max(0.0, min(1.0, $score));
     }
 
-    private function canopyModifier(CanopyClosure $canopy): float
+    /**
+     * Proxy for stand basal area via BD Forêt FO/FF. Intermediate density (open canopy)
+     * is closer to published optima (~15–20 m²/ha) than fully closed stands.
+     */
+    public function standDensitySuitability(ForestCover $cover, CanopyClosure $canopy): float
     {
-        if (isset($this->canopyAffinity[$canopy->value])) {
-            return $this->canopyAffinity[$canopy->value];
+        if (!$cover->isForest()) {
+            return $this->requiresForest ? 0.08 : 0.55;
+        }
+
+        if (isset($this->standDensityAffinity[$canopy->value])) {
+            return max(0.0, min(1.0, $this->standDensityAffinity[$canopy->value]));
         }
 
         return match ($canopy) {
-            CanopyClosure::Unknown => 1.0,
-            CanopyClosure::Closed => 1.0,
-            // Litter and understorey microclimate hold better under a closed canopy.
-            // Morels (requiresForest = false) like disturbed / open edges instead.
-            CanopyClosure::Open => $this->requiresForest ? 0.88 : 1.08,
+            CanopyClosure::Unknown => 0.55,
+            CanopyClosure::Open => $this->requiresForest ? 0.92 : 0.95,
+            CanopyClosure::Closed => $this->requiresForest ? 0.78 : 0.70,
+        };
+    }
+
+    public function geologySuitability(Substrate $substrate): float
+    {
+        if (isset($this->geologyAffinity[$substrate->value])) {
+            return max(0.0, min(1.0, $this->geologyAffinity[$substrate->value]));
+        }
+
+        // Neutral when the species has no stated preference or the cell is unknown.
+        return match ($substrate) {
+            Substrate::Unknown => 0.55,
+            default => 0.70,
         };
     }
 }

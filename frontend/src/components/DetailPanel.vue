@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import type { Highlight, LocationReport } from '../types'
+import { Progress } from '@vuetify/v0'
+import type { LocationReport, Sector } from '../types'
+import { criterionColor, scoreColor } from '../lib/scoreColor'
 
 const props = defineProps<{
   report: LocationReport | null
-  highlights: Highlight[]
+  sectors: Sector[]
+  habitatOnly: boolean
   loading: boolean
 }>()
 
@@ -11,433 +14,151 @@ const emit = defineEmits<{
   highlightPicked: [point: { lat: number; lng: number }]
 }>()
 
-// Same hue progression as the map ramp, darkened: these are read as text and as thin bars
-// on a cream panel, where the bright end of the raster palette would be illegible.
-function scoreColor(score: number): string {
-  if (score >= 94) return '#a86a00'
-  if (score >= 87) return '#c2600f'
-  if (score >= 78) return '#a8384f'
-  if (score >= 64) return '#6f4a78'
-  if (score >= 45) return '#4a4a7a'
-  return '#5b5f6b'
-}
-
-/** A criterion is a plain 0–100 rating, so it keeps an even ramp rather than the score thresholds. */
-function criterionColor(value: number): string {
-  if (value >= 80) return '#c2600f'
-  if (value >= 60) return '#a8384f'
-  if (value >= 40) return '#6f4a78'
-  if (value >= 20) return '#4a4a7a'
-  return '#5b5f6b'
-}
-
 function weatherTone(weather: LocationReport['weather']): string {
-  const days = weather.daysSinceSoakingRain
-  if (days === null) return 'tone-dry'
-  if (days <= 3) return 'tone-early'
-  if (days <= 6) return 'tone-warming'
-  if (days <= 14) return 'tone-window'
-  return 'tone-late'
+  const days = weather.flushDaysSince ?? weather.daysSinceSoakingRain
+  if (days === null) return 'bg-[#ece7dc] text-[#5a5346]'
+  if (weather.flushPhase === 'incubating') return 'bg-[#f3e6d2] text-[#7a4e12]'
+  if (weather.flushPhase === 'starting' || weather.flushPhase === 'peak') return 'bg-[#ddecd8] text-[#1f5c32]'
+  if (weather.flushPhase === 'declining' || weather.flushPhase === 'lingering') return 'bg-[#efe6c8] text-[#6a5310]'
+  if (days <= 3) return 'bg-[#f3e6d2] text-[#7a4e12]'
+  if (days <= 6) return 'bg-[#efe6c8] text-[#6a5310]'
+  if (days <= 14) return 'bg-[#ddecd8] text-[#1f5c32]'
+  return 'bg-[#ece7dc] text-[#5a5346]'
 }
 
-function highlightStand(highlight: Highlight): string {
-  const parts = [highlight.hostTreeCode ? highlight.hostTree : highlight.cover]
-  if (highlight.canopyCode) {
-    parts.push(highlight.canopy.toLowerCase())
-  }
-
+function sectorStand(sector: Sector): string {
+  const parts = [sector.hostTreeCode ? sector.hostTree : sector.cover]
+  if (sector.canopyCode) parts.push(sector.canopy.toLowerCase())
   return parts.join(', ')
 }
 </script>
 
 <template>
-  <aside class="panel">
-    <section v-if="props.report" class="block">
-      <header class="score-header">
-        <div class="score-value" :style="{ color: scoreColor(props.report.score) }">
+  <div class="flex flex-col gap-4 bg-surface px-4 py-4">
+    <div v-if="props.loading" class="flex justify-center py-8 text-sm text-secondary">Chargement…</div>
+
+    <section v-else-if="props.report">
+      <header class="flex items-baseline gap-3">
+        <div class="text-[2.4rem] font-bold leading-none tracking-tight" :style="{ color: scoreColor(props.report.score) }">
           {{ Math.round(props.report.score) }}
-          <span>/ 100</span>
+          <span class="text-[0.85rem] font-semibold text-secondary">/ 100</span>
         </div>
-        <div class="score-meta">
+        <div class="flex flex-col text-sm">
           <strong>{{ props.report.levelLabel }}</strong>
           <span>{{ props.report.species.name }}</span>
+          <span class="mt-0.5 text-xs text-secondary">Indice, pas une probabilité de trouver</span>
         </div>
       </header>
-
-      <p class="coords">
-        {{ props.report.coordinates.lat.toFixed(4) }},
-        {{ props.report.coordinates.lng.toFixed(4) }}
+      <p class="mt-1 text-xs tabular-nums text-secondary">
+        {{ props.report.coordinates.lat.toFixed(4) }}, {{ props.report.coordinates.lng.toFixed(4) }}
       </p>
 
-      <div class="weather-card" :class="weatherTone(props.report.weather)">
+      <div v-if="!props.habitatOnly" class="mt-3 flex flex-col gap-0.5 rounded-lg px-2.5 py-2 text-[0.78rem] leading-snug" :class="weatherTone(props.report.weather)">
         <strong>{{ props.report.weather.label }}</strong>
-        <span v-if="props.report.weather.daysSinceSoakingRain !== null">
-          Dernière pluie marquante : {{ props.report.weather.soakingRain }}&nbsp;mm
-          il y a {{ props.report.weather.daysSinceSoakingRain }}&nbsp;j
+        <span v-if="props.report.weather.flushDaysSince != null">
+          Poussée suivie : {{ props.report.weather.flushMillimetres }}&nbsp;mm il y a {{ props.report.weather.flushDaysSince }}&nbsp;j
         </span>
-        <span v-else>Pas d'épisode déclenchant clair sur 15&nbsp;j</span>
+        <span
+          v-if="
+            props.report.weather.daysSinceSoakingRain != null &&
+            props.report.weather.flushDaysSince != null &&
+            props.report.weather.daysSinceSoakingRain !== props.report.weather.flushDaysSince
+          "
+        >
+          Orage plus récent : {{ props.report.weather.soakingRain }}&nbsp;mm il y a {{ props.report.weather.daysSinceSoakingRain }}&nbsp;j (pas encore productif)
+        </span>
+        <span v-else-if="props.report.weather.flushDaysSince == null && props.report.weather.daysSinceSoakingRain != null">
+          Dernière pluie marquante : {{ props.report.weather.soakingRain }}&nbsp;mm il y a {{ props.report.weather.daysSinceSoakingRain }}&nbsp;j
+        </span>
+        <span v-else-if="props.report.weather.flushDaysSince == null">Pas d'épisode déclenchant clair sur 15&nbsp;j</span>
       </div>
+      <p v-else class="mt-3 rounded-lg bg-[#e8ecf2] px-2.5 py-2 text-[0.78rem] text-[#2f3d55]">
+        Mode potentiel d'habitat — météo et saison ignorées, poids renormalisés.
+      </p>
 
-      <h3 class="block-title">Ce que dit le terrain</h3>
-      <dl class="terrain">
-        <div><dt>Altitude</dt><dd>{{ props.report.terrain.elevation }} m</dd></div>
-        <div><dt>Pente</dt><dd>{{ props.report.terrain.slope }}°</dd></div>
-        <div><dt>Exposition</dt><dd>{{ props.report.terrain.exposure }}</dd></div>
-        <div><dt>Couvert</dt><dd>{{ props.report.terrain.cover }}</dd></div>
-        <div v-if="props.report.terrain.hostTreeCode">
-          <dt>Essence</dt>
-          <dd>{{ props.report.terrain.hostTree }}</dd>
-        </div>
-        <div v-if="props.report.terrain.canopyCode">
-          <dt>Densité</dt>
-          <dd>{{ props.report.terrain.canopy }}</dd>
-        </div>
-        <div>
-          <dt>Lisière</dt>
-          <dd>
+      <h3 class="mb-2 mt-4 text-[0.74rem] font-bold uppercase tracking-wider text-secondary">Ce que dit le terrain</h3>
+      <dl class="m-0 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+        <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Altitude</dt><dd class="m-0 font-semibold">{{ props.report.terrain.elevation }} m</dd></div>
+        <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Pente</dt><dd class="m-0 font-semibold">{{ props.report.terrain.slope }}°</dd></div>
+        <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Exposition</dt><dd class="m-0 font-semibold">{{ props.report.terrain.exposure }}</dd></div>
+        <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Couvert</dt><dd class="m-0 font-semibold">{{ props.report.terrain.cover }}</dd></div>
+        <div v-if="props.report.terrain.hostTreeCode" class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Essence</dt><dd class="m-0 font-semibold">{{ props.report.terrain.hostTree }}</dd></div>
+        <div v-if="props.report.terrain.canopyCode" class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Densité</dt><dd class="m-0 font-semibold">{{ props.report.terrain.canopy }}</dd></div>
+        <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5">
+          <dt class="text-secondary">Lisière</dt>
+          <dd class="m-0 font-semibold">
             {{ props.report.terrain.edgeDistance >= 0 ? `${props.report.terrain.edgeDistance} m dedans` : `${Math.abs(props.report.terrain.edgeDistance)} m dehors` }}
           </dd>
         </div>
-        <div><dt>Eau</dt><dd>{{ props.report.terrain.waterDistance }} m</dd></div>
-        <div><dt>Humidité</dt><dd>{{ props.report.terrain.moisture }} / 100</dd></div>
+        <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Eau</dt><dd class="m-0 font-semibold">{{ props.report.terrain.waterDistance }} m</dd></div>
+        <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Humidité</dt><dd class="m-0 font-semibold">{{ props.report.terrain.moisture }} / 100</dd></div>
+        <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Géologie</dt><dd class="m-0 font-semibold">{{ props.report.terrain.geology }}</dd></div>
       </dl>
 
-      <h3 class="block-title">Pourquoi ce score</h3>
-      <p class="criteria-intro">
-        Chaque barre est le score du critère sur ce point. Le pourcentage est son poids dans
-        le modèle — un critère à 2&nbsp;% affine le choix, il ne le décide pas.
+      <h3 class="mb-2 mt-4 text-[0.74rem] font-bold uppercase tracking-wider text-secondary">Pourquoi ce score</h3>
+      <p class="mb-2 text-xs leading-snug text-secondary">
+        Chaque barre est le score du critère sur ce point. Le pourcentage est son poids dans le modèle.
       </p>
-      <ul class="criteria">
+      <ul class="m-0 flex list-none flex-col gap-3 p-0">
         <li v-for="criterion in props.report.breakdown" :key="criterion.criterion">
-          <div class="criterion-head">
+          <div class="mb-1 flex justify-between text-[0.79rem]">
             <span>{{ criterion.label }}</span>
-            <span class="criterion-weight">poids {{ Math.round(criterion.weight * 100) }} %</span>
+            <span class="text-xs text-secondary">poids {{ Math.round(criterion.weight * 100) }} %</span>
           </div>
-          <div class="criterion-track">
-            <div
-              class="criterion-fill"
-              :style="{ width: `${criterion.value}%`, background: criterionColor(criterion.value) }"
-            />
-          </div>
-          <p class="criterion-rationale">{{ criterion.rationale }}</p>
-          <p class="criterion-note">{{ criterion.explanation }}</p>
+          <Progress.Root :model-value="criterion.value" :max="100">
+            <Progress.Track class="h-1.5 overflow-hidden rounded bg-[#e8e1d0]">
+              <Progress.Fill class="h-full rounded" :style="{ background: criterionColor(criterion.value) }" />
+            </Progress.Track>
+          </Progress.Root>
+          <p class="mt-1 text-xs italic text-secondary">{{ criterion.rationale }}</p>
+          <p class="m-0 text-xs text-secondary">{{ criterion.explanation }}</p>
         </li>
       </ul>
 
-      <h3 class="block-title">Autres espèces ici</h3>
-      <ul class="other-species">
-        <li v-for="item in props.report.allSpecies" :key="item.id">
+      <h3 class="mb-2 mt-4 text-[0.74rem] font-bold uppercase tracking-wider text-secondary">Autres espèces ici</h3>
+      <ul class="m-0 flex list-none flex-col gap-1 p-0 text-[0.81rem]">
+        <li v-for="item in props.report.allSpecies" :key="item.id" class="flex justify-between gap-2">
           <span>{{ item.name }}</span>
-          <span class="other-score" :style="{ color: scoreColor(item.score) }">
+          <span class="font-bold" :style="{ color: scoreColor(item.score) }">
             {{ Math.round(item.score) }}
-            <em v-if="!item.inSeason">hors saison</em>
+            <em v-if="!props.habitatOnly && !item.inSeason" class="ml-1 text-[0.68rem] font-normal not-italic text-secondary">hors saison</em>
           </span>
         </li>
       </ul>
     </section>
 
-    <section v-else class="block empty">
-      <h3 class="block-title">Aucun point sélectionné</h3>
-      <p>
-        Cliquez n'importe où sur la carte pour obtenir l'altitude, l'exposition, le couvert
-        forestier et le détail du score à cet endroit.
+    <section v-else class="text-sm leading-snug text-secondary">
+      <h3 class="mb-2 text-[0.74rem] font-bold uppercase tracking-wider">Aucun point sélectionné</h3>
+      <p class="m-0">
+        Cliquez n'importe où sur la carte pour obtenir l'altitude, l'exposition, le couvert forestier et le détail du score.
       </p>
     </section>
 
-    <section v-if="props.highlights.length > 0" class="block">
-      <h3 class="block-title">Secteurs à explorer</h3>
-      <p class="highlights-note">
-        Pistes classées dans la vue actuelle. Cliquez pour centrer la carte et ouvrir le détail —
-        ce ne sont pas des clusters de points.
+    <section v-if="props.sectors.length > 0">
+      <h3 class="mb-1 text-[0.74rem] font-bold uppercase tracking-wider text-secondary">Secteurs à 90 ou plus</h3>
+      <p class="mb-2 text-xs leading-snug text-secondary">
+        Taches continues dans la vue actuelle, classées par surface.
       </p>
-      <ol class="highlights">
-        <li v-for="(highlight, index) in props.highlights" :key="`${highlight.lat}-${highlight.lng}`">
-          <button type="button" @click="emit('highlightPicked', { lat: highlight.lat, lng: highlight.lng })">
-            <span class="rank" :style="{ background: scoreColor(highlight.score) }">
-              {{ index + 1 }}
+      <ol class="m-0 flex list-none flex-col gap-1.5 p-0">
+        <li v-for="sector in props.sectors" :key="`${sector.lat}-${sector.lng}`">
+          <button
+            type="button"
+            class="flex w-full gap-2 rounded-lg border border-[#e2dac9] bg-[#fffdf8] px-2 py-2 text-left"
+            @click="emit('highlightPicked', { lat: sector.lat, lng: sector.lng })"
+          >
+            <span
+              class="flex h-5 min-w-10 items-center justify-center rounded-md px-1 text-[0.62rem] font-bold text-white"
+              :style="{ background: scoreColor(sector.maxScore) }"
+            >
+              {{ sector.areaHa < 10 ? sector.areaHa.toFixed(1) : Math.round(sector.areaHa) }} ha
             </span>
-            <span class="highlight-body">
-              <strong>{{ Math.round(highlight.score) }} / 100</strong>
-              <span class="highlight-meta">
-                {{ highlight.elevation }} m · versant {{ highlight.exposure }} · {{ highlightStand(highlight) }}
-              </span>
-              <span class="highlight-reason">{{ highlight.reasons[0] }}</span>
+            <span class="flex flex-col text-[0.78rem]">
+              <strong>{{ Math.round(sector.minScore) }}–{{ Math.round(sector.maxScore) }} · {{ sector.areaHa }} ha</strong>
+              <span class="text-xs text-secondary">{{ sector.elevation }} m · versant {{ sector.exposure }} · {{ sectorStand(sector) }}</span>
             </span>
           </button>
         </li>
       </ol>
     </section>
-  </aside>
+  </div>
 </template>
-
-<style scoped>
-.panel {
-  display: flex;
-  flex-direction: column;
-  gap: 1.1rem;
-  padding: 1rem 1.05rem 2rem;
-  overflow-y: auto;
-  background: #fbf9f3;
-  border-left: 1px solid #ded6c4;
-}
-
-.block-title {
-  margin: 1rem 0 0.5rem;
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: #6a6153;
-}
-
-.block-title:first-child {
-  margin-top: 0;
-}
-
-.score-header {
-  display: flex;
-  align-items: baseline;
-  gap: 0.7rem;
-}
-
-.score-value {
-  font-size: 2.4rem;
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  line-height: 1;
-}
-
-.score-value span {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #7d7463;
-}
-
-.score-meta {
-  display: flex;
-  flex-direction: column;
-  font-size: 0.85rem;
-  color: #4a443a;
-}
-
-.coords {
-  margin: 0.35rem 0 0;
-  font-size: 0.75rem;
-  color: #8a8172;
-  font-variant-numeric: tabular-nums;
-}
-
-.terrain {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.35rem 0.7rem;
-  margin: 0;
-  font-size: 0.8rem;
-}
-
-.terrain div {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.4rem;
-  border-bottom: 1px dotted #ddd5c3;
-  padding-bottom: 0.15rem;
-}
-
-.terrain dt {
-  color: #7d7463;
-}
-
-.terrain dd {
-  margin: 0;
-  font-weight: 600;
-  color: #2f2a22;
-  text-align: right;
-}
-
-.criteria {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-}
-
-.criterion-head {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.79rem;
-  color: #3f3a31;
-}
-
-.criterion-weight {
-  color: #8a8172;
-  font-size: 0.72rem;
-}
-
-.criterion-track {
-  height: 6px;
-  margin: 0.22rem 0 0.22rem;
-  background: #e8e1d0;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.criterion-fill {
-  height: 100%;
-  border-radius: 4px;
-}
-
-.criterion-note {
-  margin: 0;
-  font-size: 0.74rem;
-  line-height: 1.35;
-  color: #6a6153;
-}
-
-.other-species {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.81rem;
-}
-
-.other-species li {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.other-score {
-  font-weight: 700;
-}
-
-.other-score em {
-  margin-left: 0.3rem;
-  font-size: 0.68rem;
-  font-weight: 500;
-  font-style: normal;
-  color: #8a8172;
-}
-
-.empty p {
-  margin: 0;
-  font-size: 0.82rem;
-  line-height: 1.45;
-  color: #6a6153;
-}
-
-.highlights-note {
-  margin: 0 0 0.5rem;
-  font-size: 0.73rem;
-  line-height: 1.35;
-  color: #7d7463;
-}
-
-.highlights {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  counter-reset: none;
-}
-
-.highlights button {
-  display: flex;
-  gap: 0.55rem;
-  width: 100%;
-  padding: 0.45rem 0.5rem;
-  border: 1px solid #e2dac9;
-  border-radius: 8px;
-  background: #fffdf8;
-  text-align: left;
-  cursor: pointer;
-}
-
-.highlights button:hover {
-  border-color: #14342a;
-}
-
-.rank {
-  flex: 0 0 20px;
-  height: 20px;
-  border-radius: 50%;
-  color: #f8f5ec;
-  font-size: 0.7rem;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.highlight-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  font-size: 0.78rem;
-  color: #3f3a31;
-}
-
-.highlight-meta {
-  color: #7d7463;
-  font-size: 0.73rem;
-}
-
-.highlight-reason {
-  color: #55503f;
-  font-size: 0.72rem;
-  line-height: 1.3;
-}
-
-.weather-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  margin-top: 0.75rem;
-  padding: 0.55rem 0.65rem;
-  border-radius: 8px;
-  font-size: 0.78rem;
-  line-height: 1.35;
-}
-
-.weather-card.tone-early {
-  background: #f3e6d2;
-  color: #7a4e12;
-}
-
-.weather-card.tone-warming {
-  background: #efe6c8;
-  color: #6a5310;
-}
-
-.weather-card.tone-window {
-  background: #ddecd8;
-  color: #1f5c32;
-}
-
-.weather-card.tone-late,
-.weather-card.tone-dry {
-  background: #ece7dc;
-  color: #5a5346;
-}
-
-.criteria-intro {
-  margin: 0 0 0.55rem;
-  font-size: 0.73rem;
-  line-height: 1.4;
-  color: #7d7463;
-}
-
-.criterion-rationale {
-  margin: 0.15rem 0 0.1rem;
-  font-size: 0.72rem;
-  line-height: 1.35;
-  color: #5a5346;
-  font-style: italic;
-}
-</style>

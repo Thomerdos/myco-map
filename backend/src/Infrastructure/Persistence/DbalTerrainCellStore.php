@@ -9,6 +9,7 @@ use App\Domain\Geo\Coordinates;
 use App\Domain\Geo\Grid;
 use App\Domain\Geo\GridWindow;
 use App\Domain\Terrain\StandCode;
+use App\Domain\Terrain\Substrate;
 use App\Domain\Terrain\TerrainCellStore;
 use App\Domain\Terrain\TerrainProfile;
 use Doctrine\DBAL\Connection;
@@ -28,8 +29,11 @@ final class DbalTerrainCellStore implements TerrainCellStore
         $this->connection->executeStatement('PRAGMA journal_mode = WAL');
         $this->connection->executeStatement('PRAGMA synchronous = OFF');
 
+        // Recreate so schema upgrades (geology column) apply on every precompute.
+        $this->connection->executeStatement('DROP TABLE IF EXISTS terrain_cell');
+
         $this->connection->executeStatement(<<<'SQL'
-            CREATE TABLE IF NOT EXISTS terrain_cell (
+            CREATE TABLE terrain_cell (
                 row_index INTEGER NOT NULL,
                 column_index INTEGER NOT NULL,
                 latitude REAL NOT NULL,
@@ -38,9 +42,10 @@ final class DbalTerrainCellStore implements TerrainCellStore
                 slope REAL NOT NULL,
                 aspect REAL NOT NULL,
                 curvature REAL NOT NULL,
-                cover INTEGER NOT NULL, -- packed StandCode (cover + host + canopy); 0-4 still valid
+                cover INTEGER NOT NULL,
                 edge_distance INTEGER NOT NULL,
                 water_distance INTEGER NOT NULL,
+                geology INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (row_index, column_index)
             ) WITHOUT ROWID
             SQL);
@@ -86,6 +91,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
                     $profile->standCode(),
                     $profile->edgeDistanceMeters,
                     $profile->waterDistanceMeters,
+                    $profile->substrate->value,
                 ];
 
                 if (\count($buffer) >= self::INSERT_CHUNK) {
@@ -168,7 +174,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
     public function readWindow(GridWindow $window): iterable
     {
         $sql = 'SELECT column_index, row_index, latitude, longitude, elevation, slope, aspect, curvature,
-                       cover, edge_distance, water_distance
+                       cover, edge_distance, water_distance, geology
                 FROM terrain_cell
                 WHERE row_index BETWEEN :firstRow AND :lastRow
                   AND column_index BETWEEN :firstColumn AND :lastColumn';
@@ -201,7 +207,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
     {
         $row = $this->connection->fetchAssociative(
             'SELECT column_index, row_index, latitude, longitude, elevation, slope, aspect, curvature,
-                    cover, edge_distance, water_distance
+                    cover, edge_distance, water_distance, geology
              FROM terrain_cell
              WHERE latitude BETWEEN :latMin AND :latMax
                AND longitude BETWEEN :lngMin AND :lngMax
@@ -224,7 +230,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
     /** @param list<array<int, float|int>> $buffer */
     private function flush(array $buffer): void
     {
-        $placeholders = implode(',', array_fill(0, \count($buffer), '(?,?,?,?,?,?,?,?,?,?,?)'));
+        $placeholders = implode(',', array_fill(0, \count($buffer), '(?,?,?,?,?,?,?,?,?,?,?,?)'));
         $parameters = [];
 
         foreach ($buffer as $values) {
@@ -235,19 +241,13 @@ final class DbalTerrainCellStore implements TerrainCellStore
 
         $this->connection->executeStatement(
             'INSERT OR REPLACE INTO terrain_cell
-             (row_index, column_index, latitude, longitude, elevation, slope, aspect, curvature, cover, edge_distance, water_distance)
+             (row_index, column_index, latitude, longitude, elevation, slope, aspect, curvature, cover, edge_distance, water_distance, geology)
              VALUES ' . $placeholders,
             $parameters,
         );
     }
 
-    /**
-     * The `cover` column stores a {@see StandCode}: 3 bits of ForestCover, then host tree,
-     * then canopy. Archives written before packing only stored 0–4, which still unpacks as
-     * that cover class plus unknown host and canopy.
-     *
-     * @param array<string, mixed> $row
-     */
+    /** @param array<string, mixed> $row */
     private function hydrate(array $row): TerrainProfile
     {
         $packed = (int) $row['cover'];
@@ -263,6 +263,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
             waterDistanceMeters: (int) $row['water_distance'],
             hostTree: StandCode::host($packed),
             canopy: StandCode::canopy($packed),
+            substrate: Substrate::tryFrom((int) ($row['geology'] ?? 0)) ?? Substrate::Unknown,
         );
     }
 }

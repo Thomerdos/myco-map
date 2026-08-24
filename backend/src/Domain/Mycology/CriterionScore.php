@@ -10,12 +10,18 @@ final readonly class CriterionScore
         public Criterion $criterion,
         public float $value,
         public string $explanation,
+        public ?float $weightOverride = null,
     ) {
+    }
+
+    public function weight(): float
+    {
+        return $this->weightOverride ?? $this->criterion->weight();
     }
 
     public function weighted(): float
     {
-        return $this->value * $this->criterion->weight();
+        return $this->value * $this->weight();
     }
 
     /**
@@ -24,7 +30,7 @@ final readonly class CriterionScore
      */
     public function influence(): float
     {
-        return ($this->value - 50.0) * $this->criterion->weight();
+        return ($this->value - 50.0) * $this->weight();
     }
 
     /** @return array<string, float|string> */
@@ -34,7 +40,7 @@ final readonly class CriterionScore
             'criterion' => $this->criterion->value,
             'label' => $this->criterion->label(),
             'value' => round($this->value, 1),
-            'weight' => $this->criterion->weight(),
+            'weight' => round($this->weight(), 4),
             'rationale' => $this->criterion->rationale(),
             'explanation' => $this->explanation,
         ];

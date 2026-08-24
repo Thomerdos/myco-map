@@ -22,17 +22,25 @@ final readonly class SuitabilityCalculator
         TerrainProfile $terrain,
         WeatherConditions $weather,
         SeasonAssessment $season,
+        ScoringMode $mode = ScoringMode::Moment,
     ): float {
-        $total = $season->criterionScore->weighted()
-            + $this->weatherValue($species, $weather) * Criterion::Weather->weight()
-            + $this->altitudeValue($species, $terrain) * Criterion::Altitude->weight()
-            + $this->exposureValue($species, $terrain) * Criterion::Exposure->weight()
-            + $this->coverValue($species, $terrain) * Criterion::Cover->weight()
-            + $this->moistureValue($species, $terrain) * Criterion::Moisture->weight()
-            + $this->edgeValue($species, $terrain) * Criterion::Edge->weight()
-            + $this->slopeValue($species, $terrain) * Criterion::Slope->weight();
+        $total = 0.0;
 
-        return $this->applyCaps($total, $species, $terrain, $season, $weather);
+        if ($mode->includesMoment()) {
+            $total += $season->criterionScore->value * $mode->weight(Criterion::Season);
+            $total += $this->weatherValue($species, $weather) * $mode->weight(Criterion::Weather);
+        }
+
+        $total += $this->altitudeValue($species, $terrain) * $mode->weight(Criterion::Altitude);
+        $total += $this->exposureValue($species, $terrain) * $mode->weight(Criterion::Exposure);
+        $total += $this->coverValue($species, $terrain) * $mode->weight(Criterion::Cover);
+        $total += $this->standDensityValue($species, $terrain) * $mode->weight(Criterion::StandDensity);
+        $total += $this->geologyValue($species, $terrain) * $mode->weight(Criterion::Geology);
+        $total += $this->moistureValue($species, $terrain) * $mode->weight(Criterion::Moisture);
+        $total += $this->edgeValue($species, $terrain) * $mode->weight(Criterion::Edge);
+        $total += $this->slopeValue($species, $terrain) * $mode->weight(Criterion::Slope);
+
+        return $this->applyCaps($total, $species, $terrain, $season, $weather, $mode);
     }
 
     public function score(
@@ -40,52 +48,16 @@ final readonly class SuitabilityCalculator
         TerrainProfile $terrain,
         WeatherConditions $weather,
         SeasonAssessment $season,
+        ScoringMode $mode = ScoringMode::Moment,
     ): SuitabilityScore {
-        $breakdown = [
-            $season->criterionScore,
-            new CriterionScore(
-                Criterion::Weather,
-                $this->weatherValue($species, $weather),
-                $this->explainWeather($species, $weather),
-            ),
-            new CriterionScore(
-                Criterion::Altitude,
-                $this->altitudeValue($species, $terrain),
-                $this->explainAltitude($species, $terrain),
-            ),
-            new CriterionScore(
-                Criterion::Exposure,
-                $this->exposureValue($species, $terrain),
-                $this->explainExposure($species, $terrain),
-            ),
-            new CriterionScore(
-                Criterion::Cover,
-                $this->coverValue($species, $terrain),
-                $this->explainCover($species, $terrain),
-            ),
-            new CriterionScore(
-                Criterion::Moisture,
-                $this->moistureValue($species, $terrain),
-                $this->explainMoisture($terrain),
-            ),
-            new CriterionScore(
-                Criterion::Edge,
-                $this->edgeValue($species, $terrain),
-                $this->explainEdge($species, $terrain),
-            ),
-            new CriterionScore(
-                Criterion::Slope,
-                $this->slopeValue($species, $terrain),
-                $this->explainSlope($species, $terrain),
-            ),
-        ];
+        $breakdown = $this->breakdown($species, $terrain, $weather, $season, $mode);
 
         $total = 0.0;
         foreach ($breakdown as $criterionScore) {
             $total += $criterionScore->weighted();
         }
 
-        $total = $this->applyCaps($total, $species, $terrain, $season, $weather);
+        $total = $this->applyCaps($total, $species, $terrain, $season, $weather, $mode);
 
         return new SuitabilityScore(
             $total,
@@ -95,26 +67,110 @@ final readonly class SuitabilityCalculator
         );
     }
 
+    /**
+     * @return list<CriterionScore>
+     */
+    private function breakdown(
+        Species $species,
+        TerrainProfile $terrain,
+        WeatherConditions $weather,
+        SeasonAssessment $season,
+        ScoringMode $mode,
+    ): array {
+        $parts = [];
+
+        if ($mode->includesMoment()) {
+            $seasonScore = $season->criterionScore;
+            $parts[] = new CriterionScore(
+                $seasonScore->criterion,
+                $seasonScore->value,
+                $seasonScore->explanation,
+                $mode->weight(Criterion::Season),
+            );
+            $parts[] = new CriterionScore(
+                Criterion::Weather,
+                $this->weatherValue($species, $weather),
+                $this->explainWeather($species, $weather),
+                $mode->weight(Criterion::Weather),
+            );
+        }
+
+        $parts[] = new CriterionScore(
+            Criterion::Altitude,
+            $this->altitudeValue($species, $terrain),
+            $this->explainAltitude($species, $terrain),
+            $mode->weight(Criterion::Altitude),
+        );
+        $parts[] = new CriterionScore(
+            Criterion::Exposure,
+            $this->exposureValue($species, $terrain),
+            $this->explainExposure($species, $terrain),
+            $mode->weight(Criterion::Exposure),
+        );
+        $parts[] = new CriterionScore(
+            Criterion::Cover,
+            $this->coverValue($species, $terrain),
+            $this->explainCover($species, $terrain),
+            $mode->weight(Criterion::Cover),
+        );
+        $parts[] = new CriterionScore(
+            Criterion::StandDensity,
+            $this->standDensityValue($species, $terrain),
+            $this->explainStandDensity($species, $terrain),
+            $mode->weight(Criterion::StandDensity),
+        );
+        $parts[] = new CriterionScore(
+            Criterion::Geology,
+            $this->geologyValue($species, $terrain),
+            $this->explainGeology($species, $terrain),
+            $mode->weight(Criterion::Geology),
+        );
+        $parts[] = new CriterionScore(
+            Criterion::Moisture,
+            $this->moistureValue($species, $terrain),
+            $this->explainMoisture($terrain),
+            $mode->weight(Criterion::Moisture),
+        );
+        $parts[] = new CriterionScore(
+            Criterion::Edge,
+            $this->edgeValue($species, $terrain),
+            $this->explainEdge($species, $terrain),
+            $mode->weight(Criterion::Edge),
+        );
+        $parts[] = new CriterionScore(
+            Criterion::Slope,
+            $this->slopeValue($species, $terrain),
+            $this->explainSlope($species, $terrain),
+            $mode->weight(Criterion::Slope),
+        );
+
+        return $parts;
+    }
+
     private function applyCaps(
         float $total,
         Species $species,
         TerrainProfile $terrain,
         SeasonAssessment $season,
         WeatherConditions $weather,
+        ScoringMode $mode,
     ): float {
         if ($species->requiresForest && !$terrain->cover->isForest()) {
             $total = min($total, 18.0);
         }
-        if (!$season->isInSeason()) {
-            $total = min($total, 38.0);
-        }
 
-        // Habitat alone must not read as "go now" while fruitbodies are still incubating.
-        $phenology = $this->flushPhenology($species, $weather);
-        if ($phenology < 25.0) {
-            $total = min($total, 48.0);
-        } elseif ($phenology < 45.0) {
-            $total = min($total, 62.0);
+        if ($mode->includesMoment()) {
+            if (!$season->isInSeason()) {
+                $total = min($total, 38.0);
+            }
+
+            // Habitat alone must not read as "go now" while fruitbodies are still incubating.
+        $phenology = FlushClock::phenology($species, $weather);
+            if ($phenology < 25.0) {
+                $total = min($total, 48.0);
+            } elseif ($phenology < 45.0) {
+                $total = min($total, 62.0);
+            }
         }
 
         return max(0.0, min(100.0, $total));
@@ -127,7 +183,7 @@ final readonly class SuitabilityCalculator
      */
     private function weatherValue(Species $species, WeatherConditions $weather): float
     {
-        $phenology = $this->flushPhenology($species, $weather);
+        $phenology = FlushClock::phenology($species, $weather);
         $supply = $this->waterSupply($weather);
 
         $recent = match (true) {
@@ -216,36 +272,9 @@ final readonly class SuitabilityCalculator
         };
     }
 
-    /**
-     * Readiness of fruitbodies given days since the end of the last soaking spell.
-     * Peaks around {@see Species::$flushDelayPeakDays}; near zero for the first days.
-     */
-    private function flushPhenology(Species $species, WeatherConditions $weather): float
+    private function explainWeather(Species $species, WeatherConditions $weather): string
     {
-        $days = $weather->daysSinceSoakingRain;
-        if ($days === null || $weather->soakingRainMillimetres < 15.0) {
-            // No clear soaking event: leftover humidity may allow scraps, not a flush.
-            return $weather->fortnightRainMillimetres >= 20.0 ? 22.0 : 10.0;
-        }
-
-        $min = $species->flushDelayMinDays;
-        $peak = $species->flushDelayPeakDays;
-        $max = $species->flushDelayMaxDays;
-
-        if ($days <= 2) {
-            return 8.0;
-        }
-        if ($days < $min) {
-            return 8.0 + (32.0 - 8.0) * ($days - 2) / max(1, $min - 2);
-        }
-        if ($days <= $peak) {
-            return 32.0 + (100.0 - 32.0) * ($days - $min) / max(1, $peak - $min);
-        }
-        if ($days <= $max) {
-            return 100.0 - 40.0 * ($days - $peak) / max(1, $max - $peak);
-        }
-
-        return max(12.0, 60.0 - ($days - $max) * 5.0);
+        return FlushClock::explain($species, $weather);
     }
 
     private function altitudeValue(Species $species, TerrainProfile $terrain): float
@@ -275,7 +304,17 @@ final readonly class SuitabilityCalculator
 
     private function coverValue(Species $species, TerrainProfile $terrain): float
     {
-        return $species->coverSuitability($terrain->cover, $terrain->hostTree, $terrain->canopy) * 100;
+        return $species->coverSuitability($terrain->cover, $terrain->hostTree) * 100;
+    }
+
+    private function standDensityValue(Species $species, TerrainProfile $terrain): float
+    {
+        return $species->standDensitySuitability($terrain->cover, $terrain->canopy) * 100;
+    }
+
+    private function geologyValue(Species $species, TerrainProfile $terrain): float
+    {
+        return $species->geologySuitability($terrain->substrate) * 100;
     }
 
     private function moistureValue(Species $species, TerrainProfile $terrain): float
@@ -291,54 +330,6 @@ final readonly class SuitabilityCalculator
     private function slopeValue(Species $species, TerrainProfile $terrain): float
     {
         return $species->slope->suitability($terrain->slopeDegrees) * 100;
-    }
-
-    private function explainWeather(Species $species, WeatherConditions $weather): string
-    {
-        if ($weather->daysSinceSoakingRain === null || $weather->soakingRainMillimetres < 15.0) {
-            return sprintf(
-                'Pas d\'épisode marquant récent (%.0f mm sur 15 j). Sans pluie déclenchante, la pousse reste improbable — %.1f °C',
-                $weather->fortnightRainMillimetres,
-                $weather->meanTemperatureCelsius,
-            );
-        }
-
-        $days = $weather->daysSinceSoakingRain;
-        $phase = match (true) {
-            $days <= 3 => sprintf(
-                'il y a %d j seulement : le mycélium démarre, trop tôt pour trouver des carpophores (pic attendu vers J+%d pour %s)',
-                $days,
-                $species->flushDelayPeakDays,
-                lcfirst($species->commonName),
-            ),
-            $days < $species->flushDelayMinDays => sprintf(
-                'il y a %d j : incubation en cours, premières sorties possibles à partir de J+%d',
-                $days,
-                $species->flushDelayMinDays,
-            ),
-            $days <= $species->flushDelayPeakDays => sprintf(
-                'il y a %d j : dans la fenêtre de pousse (idéal vers J+%d)',
-                $days,
-                $species->flushDelayPeakDays,
-            ),
-            $days <= $species->flushDelayMaxDays => sprintf(
-                'il y a %d j : fin de la poussée liée à cet épisode (fenêtre jusqu\'à J+%d)',
-                $days,
-                $species->flushDelayMaxDays,
-            ),
-            default => sprintf(
-                'il y a %d j : la poussée de cet épisode est largement derrière nous',
-                $days,
-            ),
-        };
-
-        return sprintf(
-            'Épisode de %.0f mm %s · %.0f mm sur les 5 derniers jours, %.1f °C',
-            $weather->soakingRainMillimetres,
-            $phase,
-            $weather->recentRainMillimetres,
-            $weather->meanTemperatureCelsius,
-        );
     }
 
     private function explainSlope(Species $species, TerrainProfile $terrain): string
@@ -413,11 +404,35 @@ final readonly class SuitabilityCalculator
         if ($terrain->hostTree->isKnown()) {
             $parts[] = $terrain->hostTree->label();
         }
-        if ($terrain->canopy->isKnown()) {
-            $parts[] = lcfirst($terrain->canopy->label());
-        }
 
         return sprintf('%s — hôtes recherchés : %s', implode(', ', $parts), $species->hostTrees);
+    }
+
+    private function explainStandDensity(Species $species, TerrainProfile $terrain): string
+    {
+        if (!$terrain->cover->isForest()) {
+            return $species->requiresForest
+                ? 'Hors forêt : pas de peuplement à évaluer'
+                : 'Hors forêt — acceptable pour cette espèce';
+        }
+
+        $reading = match ($terrain->canopy) {
+            \App\Domain\Terrain\CanopyClosure::Open => 'couvert ouvert (FO, 10–40 %) : plus proche de l\'optimum de surface terrière',
+            \App\Domain\Terrain\CanopyClosure::Closed => 'couvert fermé (FF, > 40 %) : peuplement plus dense que l\'optimum courant',
+            default => 'densité de peuplement inconnue (proxy FO/FF indisponible)',
+        };
+
+        return sprintf('%s — %s', $terrain->canopy->shortLabel(), $reading);
+    }
+
+    private function explainGeology(Species $species, TerrainProfile $terrain): string
+    {
+        return sprintf(
+            '%s — affinité %.0f / 100 pour %s',
+            $terrain->substrate->label(),
+            $species->geologySuitability($terrain->substrate) * 100,
+            lcfirst($species->commonName),
+        );
     }
 
     private function explainMoisture(TerrainProfile $terrain): string

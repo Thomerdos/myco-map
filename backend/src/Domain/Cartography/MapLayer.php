@@ -15,6 +15,8 @@ enum MapLayer: string
     case Exposure = 'exposure';
     case Slope = 'slope';
     case Cover = 'cover';
+    case StandDensity = 'stand_density';
+    case Geology = 'geology';
     case Moisture = 'moisture';
     case ForestEdge = 'edge';
     case Rainfall = 'rainfall';
@@ -22,11 +24,13 @@ enum MapLayer: string
     public function label(): string
     {
         return match ($this) {
-            self::Potential => 'Chance de trouver',
+            self::Potential => 'Indice de pousse',
             self::Elevation => 'Altitude',
             self::Exposure => 'Exposition (fraîcheur du versant)',
             self::Slope => 'Pente',
             self::Cover => 'Couvert forestier',
+            self::StandDensity => 'Densité du peuplement',
+            self::Geology => 'Géologie / substrat',
             self::Moisture => 'Humidité topographique',
             self::ForestEdge => 'Distance à la lisière',
             self::Rainfall => 'Pluie déclenchante',
@@ -40,7 +44,10 @@ enum MapLayer: string
 
     public function isCategorical(): bool
     {
-        return $this === self::Cover;
+        return match ($this) {
+            self::Cover, self::StandDensity, self::Geology => true,
+            default => false,
+        };
     }
 
     public function unit(): ?string

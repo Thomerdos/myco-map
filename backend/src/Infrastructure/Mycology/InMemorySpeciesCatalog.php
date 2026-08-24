@@ -13,6 +13,7 @@ use App\Domain\Mycology\SpeciesCatalog;
 use App\Domain\Terrain\CanopyClosure;
 use App\Domain\Terrain\ForestCover;
 use App\Domain\Terrain\HostTree;
+use App\Domain\Terrain\Substrate;
 
 /**
  * Habitat profiles for the species targeted around Grenoble, calibrated on the
@@ -77,6 +78,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 flushDelayMinDays: 8,
                 flushDelayPeakDays: 12,
                 flushDelayMaxDays: 16,
+                flushPersistDays: 4,
                 hostAffinity: [
                     HostTree::Beech->value => 1.00,
                     HostTree::Oak->value => 0.98,
@@ -89,6 +91,12 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     HostTree::Douglas->value => 0.52,
                     HostTree::Poplar->value => 0.28,
                     HostTree::Robinia->value => 0.22,
+                ],
+                geologyAffinity: [
+                    Substrate::Calcareous->value => 0.72,
+                    Substrate::Mixed->value => 0.78,
+                    Substrate::Siliceous->value => 0.70,
+                    Substrate::Unknown->value => 0.55,
                 ],
             ),
             new Species(
@@ -112,6 +120,10 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 ],
                 edgeAffinity: EdgeAffinity::Interior,
                 moisturePreference: 0.85,
+                flushDelayMinDays: 9,
+                flushDelayPeakDays: 13,
+                flushDelayMaxDays: 18,
+                flushPersistDays: 6,
                 hostAffinity: [
                     HostTree::Beech->value => 1.00,
                     HostTree::Oak->value => 0.82,
@@ -124,6 +136,12 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     HostTree::Pine->value => 0.20,
                     HostTree::Larch->value => 0.18,
                     HostTree::Douglas->value => 0.16,
+                ],
+                geologyAffinity: [
+                    Substrate::Calcareous->value => 0.98,
+                    Substrate::Mixed->value => 0.82,
+                    Substrate::Siliceous->value => 0.32,
+                    Substrate::Unknown->value => 0.55,
                 ],
             ),
             new Species(
@@ -148,6 +166,10 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 ],
                 edgeAffinity: EdgeAffinity::Indifferent,
                 moisturePreference: 0.88,
+                flushDelayMinDays: 7,
+                flushDelayPeakDays: 11,
+                flushDelayMaxDays: 16,
+                flushPersistDays: 5,
                 hostAffinity: [
                     HostTree::Beech->value => 0.96,
                     HostTree::SpruceFir->value => 0.95,
@@ -160,6 +182,12 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     HostTree::Douglas->value => 0.55,
                     HostTree::Poplar->value => 0.35,
                     HostTree::Robinia->value => 0.28,
+                ],
+                geologyAffinity: [
+                    Substrate::Calcareous->value => 0.62,
+                    Substrate::Mixed->value => 0.75,
+                    Substrate::Siliceous->value => 0.78,
+                    Substrate::Unknown->value => 0.55,
                 ],
             ),
             new Species(
@@ -186,6 +214,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 flushDelayMinDays: 5,
                 flushDelayPeakDays: 8,
                 flushDelayMaxDays: 13,
+                flushPersistDays: 5,
                 hostAffinity: [
                     HostTree::Beech->value => 0.98,
                     HostTree::Oak->value => 0.94,
@@ -198,6 +227,12 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     HostTree::Douglas->value => 0.48,
                     HostTree::Poplar->value => 0.32,
                     HostTree::Robinia->value => 0.26,
+                ],
+                geologyAffinity: [
+                    Substrate::Calcareous->value => 0.42,
+                    Substrate::Mixed->value => 0.68,
+                    Substrate::Siliceous->value => 0.95,
+                    Substrate::Unknown->value => 0.55,
                 ],
             ),
             new Species(
@@ -221,6 +256,10 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 ],
                 edgeAffinity: EdgeAffinity::Interior,
                 moisturePreference: 0.80,
+                flushDelayMinDays: 10,
+                flushDelayPeakDays: 14,
+                flushDelayMaxDays: 20,
+                flushPersistDays: 5,
                 hostAffinity: [
                     HostTree::SpruceFir->value => 1.00,
                     HostTree::Beech->value => 0.82,
@@ -233,6 +272,12 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     HostTree::Chestnut->value => 0.42,
                     HostTree::Poplar->value => 0.22,
                     HostTree::Robinia->value => 0.18,
+                ],
+                geologyAffinity: [
+                    Substrate::Calcareous->value => 0.58,
+                    Substrate::Mixed->value => 0.72,
+                    Substrate::Siliceous->value => 0.82,
+                    Substrate::Unknown->value => 0.55,
                 ],
             ),
             new Species(
@@ -257,6 +302,10 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 edgeAffinity: EdgeAffinity::Edge,
                 moisturePreference: 0.85,
                 requiresForest: false,
+                flushDelayMinDays: 5,
+                flushDelayPeakDays: 8,
+                flushDelayMaxDays: 12,
+                flushPersistDays: 3,
                 hostAffinity: [
                     HostTree::Poplar->value => 1.00,
                     HostTree::OtherBroadleaf->value => 0.95,
@@ -270,10 +319,16 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     HostTree::Larch->value => 0.28,
                     HostTree::Douglas->value => 0.26,
                 ],
-                canopyAffinity: [
-                    CanopyClosure::Open->value => 1.08,
-                    CanopyClosure::Closed->value => 1.00,
-                    CanopyClosure::Unknown->value => 1.00,
+                standDensityAffinity: [
+                    CanopyClosure::Open->value => 0.95,
+                    CanopyClosure::Closed->value => 0.70,
+                    CanopyClosure::Unknown->value => 0.55,
+                ],
+                geologyAffinity: [
+                    Substrate::Calcareous->value => 0.96,
+                    Substrate::Mixed->value => 0.78,
+                    Substrate::Siliceous->value => 0.38,
+                    Substrate::Unknown->value => 0.55,
                 ],
             ),
         ];

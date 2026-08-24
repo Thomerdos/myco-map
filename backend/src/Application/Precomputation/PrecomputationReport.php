@@ -13,6 +13,7 @@ final readonly class PrecomputationReport
         public int $cellSizeMeters,
         public int $elevationTiles,
         public int $forestPolygons,
+        public int $geologyPolygons,
         public int $waterFeatures,
         public int $unavailableChunks,
         public float $durationSeconds,

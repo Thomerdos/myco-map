@@ -14,3 +14,8 @@ composer.phar
 
 # Caches et données générées : la base publiée vit dans data/, pas ici
 backend/var/
+frontend/var/
+
+# Outils agent / caches locaux
+.local/
+.cursor/

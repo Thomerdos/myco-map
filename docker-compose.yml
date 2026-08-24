@@ -1,0 +1,33 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8765:8765"
+    volumes:
+      # Code monté : toute modif PHP est prise en compte sans rebuild.
+      - ./backend:/app
+      - ./data:/data:ro
+    environment:
+      APP_ENV: dev
+      APP_DEBUG: "1"
+
+  frontend:
+    image: node:20-bookworm
+    working_dir: /app
+    ports:
+      - "43123:43123"
+    volumes:
+      # Sources montées : Vite recharge (HMR) dès qu'un fichier change.
+      - ./frontend:/app
+      # Garde les node_modules du conteneur (évite le mélange host/WSL).
+      - frontend_node_modules:/app/node_modules
+    environment:
+      API_PROXY_TARGET: http://backend:8765
+      CHOKIDAR_USEPOLLING: "true"
+    command: >
+      sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 43123"
+    depends_on:
+      - backend
+
+volumes:
+  frontend_node_modules:

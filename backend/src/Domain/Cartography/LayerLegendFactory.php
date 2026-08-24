@@ -4,27 +4,36 @@ declare(strict_types=1);
 
 namespace App\Domain\Cartography;
 
+use App\Domain\Terrain\CanopyClosure;
 use App\Domain\Terrain\ForestCover;
+use App\Domain\Terrain\Substrate;
+use App\Domain\Mycology\ScoringMode;
 
 final readonly class LayerLegendFactory
 {
-    public function create(MapLayer $layer): LayerLegend
+    public function create(MapLayer $layer, ScoringMode $mode = ScoringMode::Moment): LayerLegend
     {
         return match ($layer) {
-            // Weather and season account for 38 % of the score and are near-uniform across a
-            // viewport, so in a good spell every forested cell starts high and a scale spread
-            // evenly over 0–100 paints the whole massif in one colour. The stops below are
-            // spaced on the upper half of the range, where the terrain actually discriminates,
-            // and the ramp deliberately avoids green: the basemap is already green, so warm
-            // tones are what make a promising slope readable against the forest.
-            MapLayer::Potential => new LayerLegend($layer->label(), null, false, [
-                ['value' => 0, 'label' => 'À éviter', 'color' => '#242733'],
-                ['value' => 45, 'label' => 'Faible', 'color' => '#3f3f6b'],
-                ['value' => 64, 'label' => 'Moyen', 'color' => '#6f4a78'],
-                ['value' => 78, 'label' => 'Prometteur', 'color' => '#b3556a'],
-                ['value' => 87, 'label' => 'Très prometteur', 'color' => '#ef8b3c'],
-                ['value' => 94, 'label' => 'Exceptionnel', 'color' => '#ffe473'],
-            ], true),
+            // Weather and season are near-uniform across a viewport, so in a good spell
+            // most forest sits in the 70s–80s. Warm colours start at 90, the first band
+            // that is actually rare. Green is avoided: the basemap is already forest.
+            MapLayer::Potential => $mode === ScoringMode::Habitat
+                ? new LayerLegend('Potentiel d\'habitat', null, false, [
+                    ['value' => 0, 'label' => 'À éviter', 'color' => '#242733'],
+                    ['value' => 40, 'label' => 'Faible', 'color' => '#2f3348'],
+                    ['value' => 62, 'label' => 'Moyen', 'color' => '#3f4a6b'],
+                    ['value' => 78, 'label' => 'Correct', 'color' => '#6f4a78'],
+                    ['value' => 90, 'label' => 'Prometteur', 'color' => '#ef8b3c'],
+                    ['value' => 96, 'label' => 'Exceptionnel', 'color' => '#ffe473'],
+                ], true)
+                : new LayerLegend($layer->label(), null, false, [
+                    ['value' => 0, 'label' => 'À éviter', 'color' => '#242733'],
+                    ['value' => 40, 'label' => 'Faible', 'color' => '#2f3348'],
+                    ['value' => 62, 'label' => 'Moyen', 'color' => '#3f4a6b'],
+                    ['value' => 78, 'label' => 'Correct', 'color' => '#6f4a78'],
+                    ['value' => 90, 'label' => 'Prometteur', 'color' => '#ef8b3c'],
+                    ['value' => 96, 'label' => 'Exceptionnel', 'color' => '#ffe473'],
+                ], true),
             MapLayer::Elevation => new LayerLegend($layer->label(), 'm', false, [
                 ['value' => 200, 'label' => '200 m', 'color' => '#1a6b3c'],
                 ['value' => 700, 'label' => '700 m', 'color' => '#8fbf4a'],
@@ -49,6 +58,17 @@ final readonly class LayerLegendFactory
                 ['value' => ForestCover::Broadleaf->value, 'label' => ForestCover::Broadleaf->label(), 'color' => '#7cb342'],
                 ['value' => ForestCover::Conifer->value, 'label' => ForestCover::Conifer->label(), 'color' => '#1f6b4a'],
                 ['value' => ForestCover::Mixed->value, 'label' => ForestCover::Mixed->label(), 'color' => '#4b9a6a'],
+            ]),
+            MapLayer::StandDensity => new LayerLegend($layer->label(), null, true, [
+                ['value' => CanopyClosure::Unknown->value, 'label' => CanopyClosure::Unknown->shortLabel(), 'color' => '#c8c2b4'],
+                ['value' => CanopyClosure::Open->value, 'label' => CanopyClosure::Open->label(), 'color' => '#7cb342'],
+                ['value' => CanopyClosure::Closed->value, 'label' => CanopyClosure::Closed->label(), 'color' => '#1f4d2e'],
+            ]),
+            MapLayer::Geology => new LayerLegend($layer->label(), null, true, [
+                ['value' => Substrate::Unknown->value, 'label' => Substrate::Unknown->label(), 'color' => '#c8c2b4'],
+                ['value' => Substrate::Calcareous->value, 'label' => Substrate::Calcareous->label(), 'color' => '#d4c48a'],
+                ['value' => Substrate::Siliceous->value, 'label' => Substrate::Siliceous->label(), 'color' => '#8b5a3c'],
+                ['value' => Substrate::Mixed->value, 'label' => Substrate::Mixed->label(), 'color' => '#6a7a8a'],
             ]),
             MapLayer::Moisture => new LayerLegend($layer->label(), null, false, [
                 ['value' => 0, 'label' => 'Drainant', 'color' => '#d8c9a3'],

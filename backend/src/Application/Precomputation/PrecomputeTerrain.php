@@ -6,12 +6,14 @@ namespace App\Application\Precomputation;
 
 use App\Domain\Geo\Grid;
 use App\Domain\Geo\SurveyArea;
-use App\Domain\Terrain\ElevationSampler;
 use App\Domain\Terrain\CanopyClosure;
+use App\Domain\Terrain\ElevationSampler;
 use App\Domain\Terrain\ForestCover;
+use App\Domain\Terrain\GeologySource;
 use App\Domain\Terrain\HostTree;
 use App\Domain\Terrain\LandCoverSource;
 use App\Domain\Terrain\StandCode;
+use App\Domain\Terrain\Substrate;
 use App\Domain\Terrain\TerrainCellStore;
 use App\Domain\Terrain\TerrainProfile;
 use App\Infrastructure\Raster\ChamferDistance;
@@ -19,8 +21,8 @@ use App\Infrastructure\Raster\PolygonRasterizer;
 use App\Infrastructure\Raster\TerrainDerivatives;
 
 /**
- * Builds the static half of the model once: elevation derivatives, forest cover and
- * hydrography for every cell of the survey area. Weather stays dynamic at query time.
+ * Builds the static half of the model once: elevation derivatives, forest cover,
+ * geology and hydrography for every cell. Weather stays dynamic at query time.
  */
 final readonly class PrecomputeTerrain
 {
@@ -28,6 +30,7 @@ final readonly class PrecomputeTerrain
         private SurveyArea $area,
         private ElevationSampler $elevationSampler,
         private LandCoverSource $landCover,
+        private GeologySource $geology,
         private TerrainCellStore $cellStore,
         private PolygonRasterizer $rasterizer,
         private ChamferDistance $distance,
@@ -55,6 +58,7 @@ final readonly class PrecomputeTerrain
         $progress->stageFinished('Pente, exposition et courbure');
 
         [$cover, $forestCount] = $this->rasterizeForest($grid, $progress);
+        [$geology, $geologyCount] = $this->rasterizeGeology($grid, $progress);
         [$water, $waterCount] = $this->rasterizeWater($grid, $progress);
 
         $progress->stageStarted('Distances aux lisières et à l\'eau');
@@ -80,7 +84,7 @@ final readonly class PrecomputeTerrain
         $progress->stageStarted('Écriture de la base précalculée');
         $written = $this->cellStore->replaceAll(
             $grid,
-            $this->buildCells($grid, $elevation, $derived, $cover, $insideForest, $towardsForest, $towardsWater, $progress),
+            $this->buildCells($grid, $elevation, $derived, $cover, $geology, $insideForest, $towardsForest, $towardsWater, $progress),
         );
         $progress->stageFinished('Écriture de la base précalculée');
 
@@ -91,6 +95,7 @@ final readonly class PrecomputeTerrain
             cellSizeMeters: $grid->cellSizeMeters,
             elevationTiles: $tiles,
             forestPolygons: $forestCount,
+            geologyPolygons: $geologyCount,
             waterFeatures: $waterCount,
             unavailableChunks: $this->landCover->unavailableChunks(),
             durationSeconds: microtime(true) - $startedAt,
@@ -108,7 +113,6 @@ final readonly class PrecomputeTerrain
         $elevation = new \SplFixedArray($total);
 
         for ($row = 0; $row < $grid->rows; $row++) {
-            $latitude = $grid->latitudeAt($row);
             $rowOffset = $row * $grid->columns;
 
             for ($column = 0; $column < $grid->columns; $column++) {
@@ -130,12 +134,11 @@ final readonly class PrecomputeTerrain
     /** @return array{0: \SplFixedArray<int>, 1: int} */
     private function rasterizeForest(Grid $grid, PrecomputationProgress $progress): array
     {
-        $stage = 'Couvert forestier (OpenStreetMap)';
+        $stage = 'Couvert forestier';
         $progress->stageStarted($stage);
 
         /** @var \SplFixedArray<int> $cover */
         $cover = new \SplFixedArray($grid->cellCount());
-        $cover->setSize($grid->cellCount());
         $openGround = StandCode::pack(ForestCover::Open, HostTree::Unknown, CanopyClosure::Unknown);
         for ($i = 0, $total = $grid->cellCount(); $i < $total; $i++) {
             $cover[$i] = $openGround;
@@ -158,6 +161,38 @@ final readonly class PrecomputeTerrain
         $progress->stageFinished($stage);
 
         return [$cover, $polygonCount];
+    }
+
+    /** @return array{0: \SplFixedArray<int>, 1: int} */
+    private function rasterizeGeology(Grid $grid, PrecomputationProgress $progress): array
+    {
+        $stage = 'Géologie / substrat (BRGM)';
+        $progress->stageStarted($stage);
+
+        /** @var \SplFixedArray<int> $geology */
+        $geology = new \SplFixedArray($grid->cellCount());
+        $unknown = Substrate::Unknown->value;
+        for ($i = 0, $total = $grid->cellCount(); $i < $total; $i++) {
+            $geology[$i] = $unknown;
+        }
+
+        $polygonCount = 0;
+        foreach ($this->geology->geologyPolygons($grid->bounds) as $chunk) {
+            foreach ($chunk as $polygon) {
+                $polygonCount++;
+                foreach ($polygon->outerRings as $ring) {
+                    $this->rasterizer->fillRing($geology, $grid, $ring, $polygon->substrate->value);
+                }
+                foreach ($polygon->innerRings as $ring) {
+                    $this->rasterizer->fillRing($geology, $grid, $ring, $unknown);
+                }
+            }
+            $progress->stageAdvanced($stage, $polygonCount, 0);
+        }
+
+        $progress->stageFinished($stage);
+
+        return [$geology, $polygonCount];
     }
 
     /** @return array{0: \SplFixedArray<int>, 1: int} */
@@ -194,6 +229,7 @@ final readonly class PrecomputeTerrain
      * @param \SplFixedArray<float> $elevation
      * @param array{slope: \SplFixedArray<float>, aspect: \SplFixedArray<float>, curvature: \SplFixedArray<float>} $derived
      * @param \SplFixedArray<int> $cover
+     * @param \SplFixedArray<int> $geology
      * @param \SplFixedArray<int> $insideForest
      * @param \SplFixedArray<int> $towardsForest
      * @param \SplFixedArray<int> $towardsWater
@@ -204,6 +240,7 @@ final readonly class PrecomputeTerrain
         \SplFixedArray $elevation,
         array $derived,
         \SplFixedArray $cover,
+        \SplFixedArray $geology,
         \SplFixedArray $insideForest,
         \SplFixedArray $towardsForest,
         \SplFixedArray $towardsWater,
@@ -237,6 +274,7 @@ final readonly class PrecomputeTerrain
                         waterDistanceMeters: $towardsWater[$index],
                         hostTree: StandCode::host($packed),
                         canopy: StandCode::canopy($packed),
+                        substrate: Substrate::tryFrom($geology[$index]) ?? Substrate::Unknown,
                     ),
                 ];
             }

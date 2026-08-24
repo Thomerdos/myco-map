@@ -3,6 +3,8 @@ parameters:
     app.landcover_cache_dir: '%kernel.project_dir%/var/landcover'
     app.bdforet_path: '%env(default:app.bdforet_default_path:BDFORET_PATH)%'
     app.bdforet_default_path: '%kernel.project_dir%/var/bdforet/formation-vegetale.geojsonl'
+    app.geologie_path: '%env(default:app.geologie_default_path:GEOLOGIE_PATH)%'
+    app.geologie_default_path: '%kernel.project_dir%/var/geologie/formations.geojsonl'
     app.elevation_zoom: 13
     app.area.name: 'Grenoble — Chartreuse, Belledonne, Vercors'
     app.area.south: 44.72
@@ -12,7 +14,7 @@ parameters:
     app.area.center_lat: 45.19
     app.area.center_lng: 5.79
     app.area.zoom: 11
-    app.area.cell_size: 100
+    app.area.cell_size: 50
 
 services:
     _defaults:
@@ -22,7 +24,7 @@ services:
     App\:
         resource: '../src/'
         exclude:
-            - '../src/Domain/**/{Coordinates,BoundingBox,Grid,GridWindow,SurveyArea,TerrainProfile,Exposure,ForestPolygon,WaterFeature,StandCode,Species,HarvestWindow,AltitudeBand,SlopeBand,CriterionScore,SuitabilityScore,SeasonAssessment,WeatherConditions,WeatherField,LayerLegend}.php'
+            - '../src/Domain/**/{Coordinates,BoundingBox,Grid,GridWindow,SurveyArea,TerrainProfile,Exposure,ForestPolygon,GeologyPolygon,WaterFeature,StandCode,Species,HarvestWindow,AltitudeBand,SlopeBand,CriterionScore,SuitabilityScore,SeasonAssessment,FlushClock,WeatherConditions,WeatherField,LayerLegend}.php'
             - '../src/Application/Cartography/{LayerGridQuery,LayerGridView}.php'
             - '../src/Application/Precomputation/PrecomputationReport.php'
             - '../src/Kernel.php'
@@ -65,8 +67,13 @@ services:
             $fallback: '@App\Infrastructure\LandCover\OverpassLandCover'
             $datasetPath: '%app.bdforet_path%'
 
+    App\Infrastructure\Geology\Charm50Geology:
+        arguments:
+            $datasetPath: '%app.geologie_path%'
+
     App\Domain\Terrain\ElevationSampler: '@App\Infrastructure\Elevation\TerrariumTileElevation'
     App\Domain\Terrain\LandCoverSource: '@App\Infrastructure\LandCover\BdForetLandCover'
+    App\Domain\Terrain\GeologySource: '@App\Infrastructure\Geology\Charm50Geology'
     App\Domain\Terrain\TerrainCellStore: '@App\Infrastructure\Persistence\DbalTerrainCellStore'
     App\Domain\Weather\WeatherSource: '@App\Infrastructure\Weather\OpenMeteoWeather'
     App\Domain\Mycology\SpeciesCatalog: '@App\Infrastructure\Mycology\InMemorySpeciesCatalog'

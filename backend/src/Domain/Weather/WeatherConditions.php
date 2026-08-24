@@ -34,7 +34,31 @@ final readonly class WeatherConditions
         public float $soakingRainMillimetres = 0.0,
         public float $accumulatedRainMillimetres = 0.0,
         public float $precedingDryMillimetres = 0.0,
+        /** @var list<array{daysSince: int, millimetres: float}> */
+        public array $soakingEvents = [],
     ) {
+    }
+
+    /**
+     * Every soaking spell still in the archive, newest first. Falls back to the single
+     * last-event fields when a caller has not populated the list.
+     *
+     * @return list<array{daysSince: int, millimetres: float}>
+     */
+    public function soakingSpells(): array
+    {
+        if ($this->soakingEvents !== []) {
+            return $this->soakingEvents;
+        }
+
+        if ($this->daysSinceSoakingRain !== null && $this->soakingRainMillimetres >= 15.0) {
+            return [[
+                'daysSince' => $this->daysSinceSoakingRain,
+                'millimetres' => $this->soakingRainMillimetres,
+            ]];
+        }
+
+        return [];
     }
 
     /**
@@ -76,6 +100,13 @@ final readonly class WeatherConditions
             'accumulatedRain' => round($this->accumulatedRainMillimetres, 1),
             'brokeDrySpell' => $this->brokeDrySpell(),
             'label' => $this->label(),
+            'soakingEvents' => array_map(
+                static fn (array $spell): array => [
+                    'daysSince' => $spell['daysSince'],
+                    'millimetres' => round($spell['millimetres'], 1),
+                ],
+                $this->soakingSpells(),
+            ),
         ];
     }
 }
