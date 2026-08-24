@@ -15,6 +15,24 @@ Notes de travail pour les agents (et les humains) qui interviennent sur ce dép�
 Le score est une somme pondérée de huit critères (`backend/src/Domain/Mycology/Criterion.php`),
 suivie de plafonds (`SuitabilityCalculator::applyCaps`).
 
+### Re-challenge obligatoire des poids
+
+**Toute modification du modèle (nouveau critère, nouvelle source, nouvelle espèce, changement
+de grille) doit re-challenger les pondérations** avec des données d'intérêt — pas seulement
+recaler la somme à 1,0.
+
+Sources d'intérêt, par ordre de préférence :
+
+1. **Spots / absences locales** (calibrage du README) : sur une emprise connue, comparer
+   `statistics.average` / `statistics.best` et le détail au clic avant / après.
+2. **Littérature de rendement** : sens et classement des effets (pas les pourcentages exacts).
+3. **Cohérence spatiale** : un poids élevé sur une variable quasi uniforme sur l'emprise
+   (météo à date fixe) ne discrimine pas les secteurs — il faut le justifier explicitement.
+
+Les poids restent des **priors d'expert** tant qu'aucun jeu de récoltes géolocalisées n'alimente
+le dépôt. Un prior non confronté à (1) ou (2) après un changement de modèle est considéré
+comme **non validé**.
+
 ### Statut honnête des poids
 
 **Ces poids sont des priors d'expert, pas des coefficients ajustés sur des données d'observation.**
@@ -24,27 +42,34 @@ modèles publiés de rendement à partir de la seule météo plafonnent autour d
 ([Martínez-Peña et al. 2012](https://doi.org/10.1016/j.foreco.2012.06.034)) : viser une précision
 meilleure que ~5 points sur un poids n'a pas de sens.
 
-### Table des pondérations
+### Audit des pondérations actuelles (août 2026)
 
 | Critère | Poids | Appui dans la littérature | Verdict |
 |---|---|---|---|
-| Saison | 16 % | Fenêtres de fructification par espèce (définitionnel) | Cohérent, non sourçable comme « poids » |
-| Météo / rythme de pousse | 22 % | Pluie et température significatives dans **tous** les modèles de rendement ajustés ([Martínez-Peña et al. 2012](https://doi.org/10.1016/j.foreco.2012.06.034), [Karavani et al. 2018](https://www.medfor.eu/sites/default/files/editor/karavani_et_al_final.pdf)) | Défendable pour une carte spatiale (voir note ci-dessous) |
-| Couvert forestier | 18 % | Dépendance ectomycorhizienne à l'hôte ; dans les modèles MaxEnt la présence de l'hôte est le premier contributeur ([Lentinula edodes, J. Fungi 2025](https://doi.org/10.3390/jof11100730)) | Bien appuyé |
-| Altitude | 15 % | Facteur de site significatif ; l'altitude croissante augmente la production ([Bonet et al. 2010](https://hal.science/hal-00884160v1/document)) ; 34,3 % de contribution MaxEnt pour *Cortinarius sinensis* | Bien appuyé |
-| Exposition | 15 % | Versants nord = production la plus forte, sud la plus faible ([Bonet et al. 2010](https://hal.science/hal-00884160v1/document)) ; l'humidité du sol et la faible lumière ressortent comme facteurs premiers d'abondance | Bien appuyé (sens certain, ampleur estimée) |
-| Humidité topographique | 8 % | L'humidité du sol télédétectée rivalise avec la pluie comme prédicteur (r = 0,63–0,72, [Hernández-Rodríguez et al. 2020](https://doi.org/10.1016/j.agrformet.2020.108020)) | **Probablement sous-pondéré** |
-| Position lisière | 4 % | Fructification fortement réduite en lisière : −65 % de richesse en carpophores vs intérieur ([Rianhard et al. 2025](https://doi.org/10.1002/ppp3.70008)) ; [Luoma et al. 2004](https://andrewsforest.oregonstate.edu/data/studies/tp109/luoma2004.pdf) | Sens correct pour `Interior`, **ampleur sous-modélisée** |
-| Pente | 2 % | Significative mais **effet négatif monotone** : la pente croissante diminue la production ([Bonet et al. 2010](https://hal.science/hal-00884160v1/document)) | Poids plausible, **forme de courbe divergente** |
+| Saison | 13 % | Fenêtres de fructification par espèce (définitionnel) | Cohérent |
+| Météo / rythme de pousse | 16 % | Pluie et température dans tous les modèles de rendement | Compromis spatial ; baissé pour faire de la place aux critères peuplement / substrat |
+| Couvert forestier | 14 % | Hôte ectomycorhizien = premier contributeur MaxEnt | Bien appuyé ; densité sortie en critère séparé |
+| Altitude | 13 % | Facteur de site significatif ([Bonet et al. 2010](https://hal.science/hal-00884160v1/document)) | Bien appuyé |
+| Exposition | 13 % | Versants nord > sud ([Bonet et al. 2010](https://hal.science/hal-00884160v1/document)) | Bien appuyé |
+| **Densité du peuplement** | **10 %** | Surface terrière = prédicteur stand le plus fort ; optimum ~15–20 m²/ha ([Bonet et al. 2010](https://doi.org/10.1139/x09-198)) | Proxy FO/FF seulement — amplitude réelle sous-modélisée |
+| Humidité topographique | 9 % | Humidité du sol télédétectée (r = 0,63–0,72, [Hernández-Rodríguez et al. 2020](https://doi.org/10.1016/j.agrformet.2020.108020)) | Défendable |
+| **Géologie / substrat** | **6 %** | Trompette / morille calcaire ; girolle plutôt acide (savoir + fiches d'espèce) | Discriminant local Chartreuse–Belledonne ; pas un pH mesuré |
+| Position lisière | 4 % | −65 % de richesse en lisière ([Rianhard et al. 2025](https://doi.org/10.1002/ppp3.70008)) | Sens correct ; amplitude encore sous-représentée |
+| Pente | 2 % | Effet négatif monotone ([Bonet et al. 2010](https://hal.science/hal-00884160v1/document)) | Poids plausible |
+
+**Somme = 100 %.** Re-challengé à l'ajout densité + géologie (priors d'expert, pas un fit sur récoltes).
 
 **Note sur le poids météo.** Dans les modèles publiés, la météo explique l'essentiel de la
 variabilité **interannuelle**. Ici la carte est spatiale et à date fixe : la météo est quasi
 uniforme sur une emprise, donc un poids élevé déplace toute la carte sans discriminer les
-secteurs. Les 22 % actuels sont un compromis assumé entre les deux lectures. C'est aussi
+secteurs. Les 16 % actuels sont un compromis assumé entre les deux lectures. C'est aussi
 pourquoi l'échelle de couleurs du masque « Chance de trouver » est calée sur la moitié haute
 de la plage (`LayerLegendFactory`).
 
-### Paramètres météo et phénologie
+### Table des pondérations
+
+La table d'audit ci-dessus fait office de référence. Les valeurs dans le code
+(`Criterion::weight()`) doivent rester alignées avec elle.### Paramètres météo et phénologie
 
 | Paramètre du code | Valeur | Source |
 |---|---|---|
@@ -77,18 +102,28 @@ de la plage (`LayerLegendFactory`).
 
 ### Restantes
 
-1. **Surface terrière absente.** La fermeture du couvert (`FF` / `FO`) est désormais portée par
-   `CanopyClosure` et entre dans le score, mais ce n'est qu'une classe à deux niveaux. La
-   variable de peuplement la plus corrélée aux récoltes reste la surface terrière, avec un
-   optimum vers 15–20 m²/ha. Piste : NDVI Sentinel-2.
-2. **Sol et pH absents.** Comptent pour la trompette (calcaire) et la morille.
+1. **Surface terrière encore proxy.** Le critère « Densité du peuplement » lit `CanopyClosure`
+   (FO/FF). Pas de m²/ha mesurés. Piste : NDVI Sentinel-2 ou inventaire.
+2. **pH réel absent.** La géologie Charm-50 donne un substrat calcaire / siliceux / mixte, pas
+   un pH de sol.
 3. **Délais de pousse par espèce non sourcés en revue à comité de lecture.** Voir la note en fin
    de fichier.
 
+## Géologie (BRGM Charm-50)
+
+Source : formations `*_S_FGEOL_2154` des départements 26 / 38 / 73, converties via
+`./dev.sh geologie` vers `backend/var/geologie/formations.geojsonl`. Classification par mots-clés
+sur `DESCR` → `Substrate` (calcaire, siliceux, marneux/mixte, indéterminé). Colonne SQLite
+`geology`. Masque « Géologie / substrat ».
+
 ## Précision du couvert forestier
 
-Le couvert pèse 18 % du score, c'est-à-dire plus que tout autre critère d'habitat — sa qualité
+Le couvert pèse 17 % du score — parmi les plus lourds critères d'habitat — sa qualité
 plafonne donc celle du modèle entier.
+
+**Grille à 50 m** (`app.area.cell_size`). C'est le plafond utile face à BD Forêt (≥ 0,5 ha).
+Le même pas affine pente, exposition, courbure, distances lisière / eau et donc le score.
+Une archive 100 m n'est plus compatible : rejouer `./dev.sh precompute` puis `export-data`.
 
 **Deux sources, choisies à l'exécution.** `BdForetLandCover` est l'implémentation câblée sur le
 port `LandCoverSource`. Elle lit BD Forêt V2 si le jeu converti existe, et délègue sinon à
@@ -149,7 +184,7 @@ genres et noms français courants) et la requête Overpass accepte `landcover=tr
 `natural=scrub`, ce qui récupère les cas tagués autrement — mais rien ne peut deviner une essence
 non renseignée.
 
-**Corine Land Cover est à écarter** : sa résolution est du même ordre que la grille de 100 m.
+**Corine Land Cover est à écarter** : sa résolution est trop grossière pour la grille de 50 m.
 
 ## Plafonds du score
 
@@ -167,15 +202,17 @@ deux jours après l'orage déclenchant, avant toute fructification possible.
 
 ## Comment modifier les poids
 
-1. Les poids sont dans `Criterion::weight()`. **Leur somme doit valoir 1,0.**
-2. `Criterion::rationale()` est affiché dans l'interface sous chaque critère : si un poids
+1. **Re-challenger d'abord** (section ci-dessus) : littérature + emprise / spots d'intérêt.
+2. Les poids sont dans `Criterion::weight()`. **Leur somme doit valoir 1,0.**
+3. `Criterion::rationale()` est affiché dans l'interface sous chaque critère : si un poids
    change, l'explication doit rester vraie.
-3. Les profils par espèce (tranches d'altitude, bandes de pente, affinités de couvert, d'essence
+4. Mettre à jour la table d'audit dans ce fichier (colonnes poids + verdict).
+5. Les profils par espèce (tranches d'altitude, bandes de pente, affinités de couvert, d'essence
    et de densité, délais de pousse) sont dans `InMemorySpeciesCatalog.php`.
-4. Après changement, vérifier l'effet réel sur une emprise connue :
+6. Après changement, vérifier l'effet réel sur une emprise connue :
    `GET /api/layer?south=…&layer=potential&species=cepe` et comparer `statistics.average` /
    `statistics.best` avant / après. Un poids qui ne déplace rien sur la carte est un poids inutile.
-5. Les seuils de `SuitabilityLevel::fromScore` et les paliers de `LayerLegendFactory` sont
+7. Les seuils de `SuitabilityLevel::fromScore` et les paliers de `LayerLegendFactory` sont
    calés sur la distribution produite par le modèle : **les recaler après toute modification
    de poids**, sinon les libellés perdent leur sens.
 

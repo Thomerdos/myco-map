@@ -6,7 +6,7 @@ Le **code** de ce dépôt est sous licence MIT (voir [`LICENSE`](LICENSE)). Les 
 
 © les contributeurs d'OpenStreetMap, sous [Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/1-0/).
 
-Le fichier `data/myco-terrain-100m.sqlite.gz` intègre des données OSM rasterisées : type de couvert forestier, distance aux lisières, distance aux cours d'eau. Il constitue donc une **base de données dérivée** au sens de l'ODbL. Trois conséquences pratiques :
+Le fichier `data/myco-terrain-50m.sqlite.gz` intègre des données OSM rasterisées : type de couvert forestier, distance aux lisières, distance aux cours d'eau. Il constitue donc une **base de données dérivée** au sens de l'ODbL. Trois conséquences pratiques :
 
 - **Attribution** : toute réutilisation doit créditer « © les contributeurs d'OpenStreetMap ».
 - **Partage à l'identique** : si vous redistribuez cette base ou une base qui en dérive, vous devez la publier sous ODbL.

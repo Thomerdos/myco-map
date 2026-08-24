@@ -58,6 +58,11 @@ export interface MapContext {
     cellSize: number
   }
   ready: boolean
+  projection: {
+    horizonDays: number
+    from: string
+    to: string
+  }
   grid: {
     cellSize: number
     columns: number
@@ -66,6 +71,23 @@ export interface MapContext {
   } | null
   layers: LayerDescriptor[]
   species: SpeciesSummary[]
+}
+
+export interface ProjectionDay {
+  date: string
+  offset: number
+  label: string
+  average: number | null
+  best: number | null
+  inSeason: boolean
+  weather: Weather
+}
+
+export interface ScoreProjection {
+  species: string
+  from: string
+  to: string
+  days: ProjectionDay[]
 }
 
 export interface Weather {
@@ -81,14 +103,20 @@ export interface Weather {
   brokeDrySpell: boolean
   label: string
   degraded?: boolean
+  soakingEvents?: { daysSince: number; millimetres: number }[]
+  flushDaysSince?: number | null
+  flushPhase?: string
+  flushMillimetres?: number | null
 }
 
-export interface Highlight {
+export interface Sector {
   lat: number
   lng: number
-  score: number
-  level: string
-  levelLabel: string
+  cells: number
+  areaHa: number
+  minScore: number
+  maxScore: number
+  average: number
   elevation: number
   exposure: string
   cover: string
@@ -96,12 +124,13 @@ export interface Highlight {
   hostTreeCode: number
   canopy: string
   canopyCode: number
-  reasons: string[]
 }
 
 export interface LayerGrid {
   layer: string
   layerLabel: string
+  scoringMode: 'moment' | 'habitat'
+  asOfDate: string | null
   legend: Legend
   bounds: Bounds
   columns: number
@@ -113,8 +142,9 @@ export interface LayerGrid {
     average: number | null
     best: number | null
     resolution: number
+    hotspotThreshold?: number
   }
-  highlights: Highlight[]
+  sectors: Sector[]
   weather: Weather
   species: {
     id: string
@@ -156,8 +186,12 @@ export interface LocationReport {
     edgeDistance: number
     waterDistance: number
     moisture: number
+    geology: string
+    geologyCode: number
   }
   weather: Weather
+  scoringMode: 'moment' | 'habitat'
+  asOfDate: string | null
   species: {
     id: string
     name: string

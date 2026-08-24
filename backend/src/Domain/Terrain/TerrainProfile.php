@@ -23,6 +23,7 @@ final readonly class TerrainProfile
         public int $waterDistanceMeters,
         public HostTree $hostTree = HostTree::Unknown,
         public CanopyClosure $canopy = CanopyClosure::Unknown,
+        public Substrate $substrate = Substrate::Unknown,
     ) {
     }
 

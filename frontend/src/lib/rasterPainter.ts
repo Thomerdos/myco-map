@@ -3,7 +3,7 @@ import { createColorScale, createOpacityRamp } from './colorScale'
 
 /**
  * Paints the value grid into an RGBA image, one pixel per cell. Leaflet then scales it
- * over the map, and the browser's bilinear filtering turns the 100 m lattice into a
+ * over the map, and the browser's bilinear filtering turns the 50 m lattice into a
  * continuous surface — no visible squares.
  */
 export function paintLayer(grid: LayerGrid, opacity: number): string {

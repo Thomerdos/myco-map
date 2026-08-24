@@ -23,6 +23,8 @@ final readonly class LayerValueResolver
             // Cover layer stays on the ForestCover class (0–4). Host and canopy live in
             // the packed StandCode but must not shift this categorical colour scale.
             MapLayer::Cover => (float) $terrain->cover->value,
+            MapLayer::StandDensity => (float) $terrain->canopy->value,
+            MapLayer::Geology => (float) $terrain->substrate->value,
             MapLayer::Moisture => $terrain->moistureIndex() * 100,
             MapLayer::ForestEdge => (float) max(0, $terrain->edgeDistanceMeters),
             MapLayer::Rainfall => $weather->triggerRainMillimetres,

@@ -4,7 +4,6 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import type { Bounds, LayerGrid } from '../types'
 import { fillHoles, paintLayer } from '../lib/rasterPainter'
-import { createColorScale } from '../lib/colorScale'
 import { buildContours } from '../lib/contours'
 
 const props = defineProps<{
@@ -208,45 +207,45 @@ function renderContours(grid: LayerGrid | null) {
 }
 
 /**
- * A bare numbered circle is what Leaflet's cluster plugin draws, so the ranking read as a
- * count of aggregated points. These are teardrop markers pinned to a spot, carrying a
- * standing label that spells out the rank and the score, and filled with the colour the
- * raster gives that score so the marker and the surface underneath agree.
+ * Outlines of connected patches ≥ 90, plus an area label at the centroid.
+ * Numbered pins were dropped: the score surface is a plateau, not a ranking.
  */
 function renderHighlights(grid: LayerGrid | null) {
   const group = highlightLayer.value
   if (!group) return
 
   group.clearLayers()
-  if (!grid || !props.showSpots) return
+  if (!grid || !props.showSpots || grid.legend.categorical) return
 
-  const scale = createColorScale(grid.legend)
-
-  grid.highlights.forEach((highlight, index) => {
-    const rank = index + 1
-    const score = Math.round(highlight.score)
-    const { r, g, b } = scale(highlight.score)
-
-    const marker = L.marker([highlight.lat, highlight.lng], {
-      icon: L.divIcon({
-        className: 'spot-pin',
-        html: `<span class="spot-pin-shape" style="background: rgb(${r} ${g} ${b})"><em>${rank}</em></span>`,
-        iconSize: [26, 26],
-        iconAnchor: [13, 31],
+  const threshold = grid.statistics.hotspotThreshold ?? 90
+  if (grid.layer === 'potential') {
+    const features = buildContours(fillHoles(grid), [threshold])
+    L.geoJSON(features, {
+      style: () => ({
+        color: '#c2410c',
+        weight: 1.6,
+        opacity: 0.9,
+        fillColor: '#ef8b3c',
+        fillOpacity: 0.12,
       }),
-      title: `Secteur n° ${rank} — ${score} / 100, ${highlight.levelLabel}`,
-      alt: `Secteur n° ${rank}`,
-    })
+      interactive: false,
+    }).addTo(group)
+  }
 
-    marker.bindTooltip(`<b>N° ${rank}</b> · ${score}/100`, {
-      permanent: true,
-      direction: 'right',
-      offset: [11, -18],
-      className: 'spot-label',
+  grid.sectors?.forEach((sector) => {
+    const area = sector.areaHa < 10 ? sector.areaHa.toFixed(1) : String(Math.round(sector.areaHa))
+    const marker = L.marker([sector.lat, sector.lng], {
+      icon: L.divIcon({
+        className: 'sector-chip',
+        html: `<span>${area}&nbsp;ha</span>`,
+        iconSize: [56, 18],
+        iconAnchor: [28, 9],
+      }),
+      title: `${area} ha · indice ${Math.round(sector.minScore)}–${Math.round(sector.maxScore)}`,
     })
 
     marker
-      .on('click', () => emit('locationPicked', { lat: highlight.lat, lng: highlight.lng }))
+      .on('click', () => emit('locationPicked', { lat: sector.lat, lng: sector.lng }))
       .addTo(group)
   })
 }
@@ -257,9 +256,11 @@ function renderHighlights(grid: LayerGrid | null) {
 </template>
 
 <style>
-.map-surface {
+.map-surface,
+.leaflet-container {
   width: 100%;
   height: 100%;
+  z-index: 0;
 }
 
 .raster-smooth {
@@ -270,44 +271,19 @@ function renderHighlights(grid: LayerGrid | null) {
   image-rendering: pixelated;
 }
 
-.spot-pin-shape {
+.sector-chip span {
   display: block;
-  width: 26px;
-  height: 26px;
-  border: 2px solid #16190f;
-  border-radius: 50% 50% 50% 0;
-  transform: rotate(-45deg);
-  box-shadow: 0 2px 5px rgb(0 0 0 / 45%);
-}
-
-.spot-pin-shape em {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  transform: rotate(45deg);
-  color: #16190f;
-  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
-  font-size: 0.74rem;
-  font-style: normal;
-  font-weight: 700;
-}
-
-.leaflet-tooltip.spot-label {
   padding: 1px 6px;
   border: 1px solid #16190f;
   border-radius: 5px;
   background: rgb(248 245 236 / 94%);
   color: #22261a;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-variant-numeric: tabular-nums;
+  font-weight: 700;
   white-space: nowrap;
   box-shadow: 0 1px 3px rgb(0 0 0 / 35%);
-}
-
-.leaflet-tooltip.spot-label::before {
-  display: none;
+  text-align: center;
 }
 
 .selection-pin span {

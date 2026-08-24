@@ -1,4 +1,4 @@
-import type { Bounds, LayerGrid, LocationReport, MapContext } from '../types'
+import type { Bounds, LayerGrid, LocationReport, MapContext, ScoreProjection } from '../types'
 
 const BASE = '/api'
 
@@ -26,11 +26,15 @@ export function fetchLayer(params: {
   species: string
   bounds: Bounds
   maxCells: number
+  mode?: 'moment' | 'habitat'
+  date?: string
 }): Promise<LayerGrid> {
   return get<LayerGrid>('/layer', {
     layer: params.layer,
     species: params.species,
     maxCells: params.maxCells,
+    mode: params.mode ?? 'moment',
+    ...(params.date ? { date: params.date } : {}),
     south: params.bounds.south,
     west: params.bounds.west,
     north: params.bounds.north,
@@ -42,6 +46,27 @@ export function fetchLocation(params: {
   lat: number
   lng: number
   species: string
+  mode?: 'moment' | 'habitat'
+  date?: string
 }): Promise<LocationReport> {
-  return get<LocationReport>('/location', params)
+  return get<LocationReport>('/location', {
+    lat: params.lat,
+    lng: params.lng,
+    species: params.species,
+    mode: params.mode ?? 'moment',
+    ...(params.date ? { date: params.date } : {}),
+  })
+}
+
+export function fetchProjection(params: {
+  species: string
+  bounds: Bounds
+}): Promise<ScoreProjection> {
+  return get<ScoreProjection>('/projection', {
+    species: params.species,
+    south: params.bounds.south,
+    west: params.bounds.west,
+    north: params.bounds.north,
+    east: params.bounds.east,
+  })
 }

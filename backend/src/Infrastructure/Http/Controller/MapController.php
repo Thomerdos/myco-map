@@ -6,11 +6,13 @@ namespace App\Infrastructure\Http\Controller;
 
 use App\Application\Cartography\InspectLocation;
 use App\Application\Cartography\LayerGridQuery;
+use App\Application\Cartography\ProjectScoreHorizon;
 use App\Application\Cartography\RenderLayerGrid;
 use App\Domain\Cartography\MapLayer;
 use App\Domain\Geo\BoundingBox;
 use App\Domain\Geo\Coordinates;
 use App\Domain\Geo\SurveyArea;
+use App\Domain\Mycology\ScoringMode;
 use App\Domain\Mycology\SpeciesCatalog;
 use App\Domain\Terrain\TerrainCellStore;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -21,12 +23,13 @@ use Symfony\Component\Routing\Attribute\Route;
 #[Route('/api', name: 'api_')]
 final class MapController
 {
-    private const DEFAULT_MAX_CELLS = 45_000;
+    private const DEFAULT_MAX_CELLS = 70_000;
 
     public function __construct(
         private readonly SurveyArea $area,
         private readonly RenderLayerGrid $renderLayerGrid,
         private readonly InspectLocation $inspectLocation,
+        private readonly ProjectScoreHorizon $projectScoreHorizon,
         private readonly SpeciesCatalog $speciesCatalog,
         private readonly TerrainCellStore $cellStore,
     ) {
@@ -36,10 +39,17 @@ final class MapController
     public function context(): JsonResponse
     {
         $grid = $this->cellStore->storedGrid();
+        $timezone = new \DateTimeZone('Europe/Paris');
+        $today = new \DateTimeImmutable('today', $timezone);
 
         return new JsonResponse([
             'area' => $this->area->toArray(),
             'ready' => !$this->cellStore->isEmpty(),
+            'projection' => [
+                'horizonDays' => ProjectScoreHorizon::HORIZON_DAYS,
+                'from' => $today->format('Y-m-d'),
+                'to' => $today->modify(sprintf('+%d days', ProjectScoreHorizon::HORIZON_DAYS))->format('Y-m-d'),
+            ],
             'grid' => $grid === null ? null : [
                 'cellSize' => $grid->cellSizeMeters,
                 'columns' => $grid->columns,
@@ -98,6 +108,7 @@ final class MapController
             }
 
             $maxCells = min(90_000, max(2_000, $request->query->getInt('maxCells', self::DEFAULT_MAX_CELLS)));
+            $scoringMode = $this->scoringModeFrom($request);
         } catch (\ValueError|\InvalidArgumentException $exception) {
             return new JsonResponse(['error' => $exception->getMessage()], Response::HTTP_BAD_REQUEST);
         }
@@ -107,7 +118,8 @@ final class MapController
             layer: $layer,
             speciesId: $speciesId,
             maxCells: $maxCells,
-            date: $this->dateFrom($request),
+            date: $this->projectionDateFrom($request),
+            scoringMode: $scoringMode,
         ));
 
         if ($view === null) {
@@ -134,10 +146,17 @@ final class MapController
             return new JsonResponse(['error' => 'Espèce inconnue.'], Response::HTTP_BAD_REQUEST);
         }
 
+        try {
+            $scoringMode = $this->scoringModeFrom($request);
+        } catch (\InvalidArgumentException $exception) {
+            return new JsonResponse(['error' => $exception->getMessage()], Response::HTTP_BAD_REQUEST);
+        }
+
         $report = ($this->inspectLocation)(
             new Coordinates((float) $latitude, (float) $longitude),
             $speciesId,
-            $this->dateFrom($request),
+            $this->projectionDateFrom($request),
+            $scoringMode,
         );
 
         if ($report === null) {
@@ -147,6 +166,32 @@ final class MapController
         }
 
         return new JsonResponse($report);
+    }
+
+    #[Route('/projection', name: 'projection', methods: ['GET'])]
+    public function projection(Request $request): JsonResponse
+    {
+        if ($this->cellStore->isEmpty()) {
+            return new JsonResponse([
+                'error' => 'Données non précalculées. Lancez « php bin/console app:precompute ».',
+            ], Response::HTTP_SERVICE_UNAVAILABLE);
+        }
+
+        try {
+            $viewport = $this->viewportFrom($request);
+            $speciesId = $request->query->getString('species', 'cepe');
+            if (!$this->speciesCatalog->has($speciesId)) {
+                throw new \InvalidArgumentException(sprintf('Espèce inconnue : %s', $speciesId));
+            }
+        } catch (\InvalidArgumentException $exception) {
+            return new JsonResponse(['error' => $exception->getMessage()], Response::HTTP_BAD_REQUEST);
+        }
+
+        $timezone = new \DateTimeZone('Europe/Paris');
+        $today = new \DateTimeImmutable('today', $timezone);
+        $payload = ($this->projectScoreHorizon)($viewport, $speciesId, $today);
+
+        return new JsonResponse($payload);
     }
 
     private function viewportFrom(Request $request): BoundingBox
@@ -165,19 +210,45 @@ final class MapController
         );
     }
 
-    private function dateFrom(Request $request): \DateTimeImmutable
+    private function scoringModeFrom(Request $request): ScoringMode
     {
-        $timezone = new \DateTimeZone('Europe/Paris');
-        $raw = $request->query->getString('date');
-
+        $raw = $request->query->getString('mode', ScoringMode::Moment->value);
         if ($raw === '') {
-            return new \DateTimeImmutable('now', $timezone);
+            return ScoringMode::Moment;
         }
 
         try {
-            return new \DateTimeImmutable($raw, $timezone);
-        } catch (\Throwable) {
-            return new \DateTimeImmutable('now', $timezone);
+            return ScoringMode::from($raw);
+        } catch (\ValueError) {
+            throw new \InvalidArgumentException(sprintf('Mode de score inconnu : %s', $raw));
         }
+    }
+
+    /** Clamps the requested day to today … today+HORIZON_DAYS (Europe/Paris). */
+    private function projectionDateFrom(Request $request): \DateTimeImmutable
+    {
+        $timezone = new \DateTimeZone('Europe/Paris');
+        $today = new \DateTimeImmutable('today', $timezone);
+        $latest = $today->modify(sprintf('+%d days', ProjectScoreHorizon::HORIZON_DAYS));
+        $raw = $request->query->getString('date');
+
+        if ($raw === '') {
+            return $today->setTime(12, 0);
+        }
+
+        try {
+            $date = (new \DateTimeImmutable($raw, $timezone))->setTime(12, 0);
+        } catch (\Throwable) {
+            return $today->setTime(12, 0);
+        }
+
+        if ($date < $today) {
+            return $today->setTime(12, 0);
+        }
+        if ($date > $latest) {
+            return $latest->setTime(12, 0);
+        }
+
+        return $date;
     }
 }

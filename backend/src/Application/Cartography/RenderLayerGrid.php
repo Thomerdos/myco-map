@@ -6,16 +6,17 @@ namespace App\Application\Cartography;
 
 use App\Domain\Cartography\LayerLegendFactory;
 use App\Domain\Cartography\LayerValueResolver;
+use App\Domain\Cartography\MapLayer;
 use App\Domain\Geo\BoundingBox;
-use App\Domain\Geo\Coordinates;
 use App\Domain\Geo\SurveyArea;
+use App\Domain\Mycology\FlushClock;
 use App\Domain\Mycology\SeasonAssessment;
-use App\Domain\Mycology\Species;
+use App\Domain\Mycology\ScoringMode;
 use App\Domain\Mycology\SpeciesCatalog;
 use App\Domain\Mycology\SuitabilityCalculator;
+use App\Domain\Mycology\SuitabilityLevel;
 use App\Domain\Terrain\TerrainCellStore;
 use App\Domain\Terrain\TerrainProfile;
-use App\Domain\Weather\WeatherConditions;
 use App\Domain\Weather\WeatherSource;
 
 /**
@@ -24,8 +25,7 @@ use App\Domain\Weather\WeatherSource;
  */
 final readonly class RenderLayerGrid
 {
-    private const HIGHLIGHT_COUNT = 8;
-    private const HIGHLIGHT_SPACING_METERS = 900.0;
+    private const MAX_SECTORS = 24;
 
     public function __construct(
         private SurveyArea $area,
@@ -48,13 +48,14 @@ final readonly class RenderLayerGrid
 
         $species = $this->speciesCatalog->get($query->speciesId);
         $season = new SeasonAssessment($species, $query->date);
-        $weatherField = $this->weatherSource->fieldFor($this->area->bounds);
+        $mode = $query->scoringMode;
+        $weatherField = $this->weatherSource->fieldFor($this->area->bounds, $query->date);
 
         $columns = $window->columns();
         $rows = $window->rows();
         $values = array_fill(0, $columns * $rows, null);
 
-        $candidates = [];
+        $hot = [];
         $sum = 0.0;
         $count = 0;
         $best = null;
@@ -62,7 +63,7 @@ final readonly class RenderLayerGrid
         foreach ($this->cellStore->readWindow($window) as $entry) {
             $profile = $entry['profile'];
             $weather = $weatherField->at($profile->coordinates);
-            $potential = $this->calculator->evaluate($species, $profile, $weather, $season);
+            $potential = $this->calculator->evaluate($species, $profile, $weather, $season, $mode);
 
             $value = $this->valueResolver->resolve($query->layer, $profile, $weather, $potential);
 
@@ -73,7 +74,8 @@ final readonly class RenderLayerGrid
             }
 
             // Image rows run north to south, grid rows run south to north.
-            $values[($rows - 1 - $localRow) * $columns + $localColumn] = round($value, 1);
+            $index = ($rows - 1 - $localRow) * $columns + $localColumn;
+            $values[$index] = round($value, 1);
 
             $sum += $value;
             $count++;
@@ -81,8 +83,8 @@ final readonly class RenderLayerGrid
                 $best = $value;
             }
 
-            if ($potential >= 55) {
-                $candidates[] = ['profile' => $profile, 'potential' => $potential, 'weather' => $weather];
+            if ($query->layer === MapLayer::Potential && $potential >= SuitabilityLevel::HOTSPOT_THRESHOLD) {
+                $hot[$index] = ['profile' => $profile, 'score' => $potential];
             }
         }
 
@@ -96,7 +98,7 @@ final readonly class RenderLayerGrid
 
         return new LayerGridView(
             layer: $query->layer,
-            legend: $this->legendFactory->create($query->layer),
+            legend: $this->legendFactory->create($query->layer, $mode),
             bounds: $bounds,
             columns: $columns,
             rows: $rows,
@@ -107,9 +109,10 @@ final readonly class RenderLayerGrid
                 'average' => $count > 0 ? round($sum / $count, 1) : null,
                 'best' => $best !== null ? round($best, 1) : null,
                 'resolution' => $effectiveCellSize,
+                'hotspotThreshold' => SuitabilityLevel::HOTSPOT_THRESHOLD,
             ],
-            highlights: $this->pickHighlights($candidates, $species, $season),
-            weather: $weatherField->at($query->viewport->center())->toArray()
+            sectors: $this->extractSectors($hot, $columns, $rows, $effectiveCellSize),
+            weather: FlushClock::decorate($weatherField->at($query->viewport->center()), $species)
                 + ['degraded' => $weatherField->degraded],
             species: [
                 'id' => $species->id,
@@ -125,48 +128,95 @@ final readonly class RenderLayerGrid
                     $species->harvestWindows
                 ),
             ],
+            scoringMode: $mode,
+            asOfDate: $query->date->format('Y-m-d'),
         );
     }
 
     /**
-     * Keeps the best cells while enforcing a minimum spacing, so the list reads as
-     * distinct spots to visit rather than one hotspot repeated. Explanations are only
-     * built for the few cells that survive the selection.
+     * Groups cells ≥ 90 into connected patches. Ranking individual cells is meaningless
+     * on the score plateaus the model produces; area is the honest unit.
      *
-     * @param list<array{profile: TerrainProfile, potential: float, weather: WeatherConditions}> $candidates
+     * @param array<int, array{profile: TerrainProfile, score: float}> $hot
      * @return list<array<string, mixed>>
      */
-    private function pickHighlights(array $candidates, Species $species, SeasonAssessment $season): array
+    private function extractSectors(array $hot, int $columns, int $rows, int $cellSizeMeters): array
     {
-        usort($candidates, static fn (array $a, array $b): int => $b['potential'] <=> $a['potential']);
+        if ($hot === []) {
+            return [];
+        }
 
-        $selected = [];
-        /** @var list<Coordinates> $chosen */
-        $chosen = [];
+        $cellAreaHa = ($cellSizeMeters * $cellSizeMeters) / 10_000;
+        $minCells = max(2, (int) ceil(1.0 / max(0.01, $cellAreaHa)));
+        $visited = [];
+        $sectors = [];
 
-        foreach ($candidates as $candidate) {
-            if (\count($selected) >= self::HIGHLIGHT_COUNT) {
-                break;
+        foreach (array_keys($hot) as $start) {
+            if (isset($visited[$start])) {
+                continue;
             }
 
-            $profile = $candidate['profile'];
-            $point = $profile->coordinates;
+            $stack = [$start];
+            $members = [];
+            while ($stack !== []) {
+                $index = array_pop($stack);
+                if (isset($visited[$index]) || !isset($hot[$index])) {
+                    continue;
+                }
+                $visited[$index] = true;
+                $members[] = $index;
 
-            foreach ($chosen as $existing) {
-                if ($point->distanceTo($existing) < self::HIGHLIGHT_SPACING_METERS) {
-                    continue 2;
+                $row = intdiv($index, $columns);
+                $column = $index % $columns;
+                foreach ([[0, 1], [0, -1], [1, 0], [-1, 0]] as [$dRow, $dColumn]) {
+                    $nextRow = $row + $dRow;
+                    $nextColumn = $column + $dColumn;
+                    if ($nextRow < 0 || $nextColumn < 0 || $nextRow >= $rows || $nextColumn >= $columns) {
+                        continue;
+                    }
+                    $neighbour = $nextRow * $columns + $nextColumn;
+                    if (isset($hot[$neighbour]) && !isset($visited[$neighbour])) {
+                        $stack[] = $neighbour;
+                    }
                 }
             }
 
-            $chosen[] = $point;
-            $score = $this->calculator->score($species, $profile, $candidate['weather'], $season);
+            if (\count($members) < $minCells) {
+                continue;
+            }
 
-            $selected[] = [
-                'lat' => round($point->latitude, 5),
-                'lng' => round($point->longitude, 5),
-                'score' => round($score->value, 1),
-                'level' => $score->level->value,
-                'levelLabel' => $score->level->label(),
+            $bestIndex = $members[0];
+            $sumScore = 0.0;
+            $sumLat = 0.0;
+            $sumLng = 0.0;
+            $minScore = $hot[$bestIndex]['score'];
+            $maxScore = $minScore;
+            foreach ($members as $index) {
+                $score = $hot[$index]['score'];
+                $sumScore += $score;
+                $point = $hot[$index]['profile']->coordinates;
+                $sumLat += $point->latitude;
+                $sumLng += $point->longitude;
+                if ($score > $maxScore) {
+                    $maxScore = $score;
+                    $bestIndex = $index;
+                }
+                if ($score < $minScore) {
+                    $minScore = $score;
+                }
+            }
+
+            $profile = $hot[$bestIndex]['profile'];
+            $n = \count($members);
+
+            $sectors[] = [
+                'lat' => round($sumLat / $n, 5),
+                'lng' => round($sumLng / $n, 5),
+                'cells' => $n,
+                'areaHa' => round($n * $cellAreaHa, 1),
+                'minScore' => round($minScore, 1),
+                'maxScore' => round($maxScore, 1),
+                'average' => round($sumScore / $n, 1),
                 'elevation' => $profile->elevationMeters,
                 'exposure' => $profile->exposure()->cardinal(),
                 'cover' => $profile->cover->label(),
@@ -174,13 +224,18 @@ final readonly class RenderLayerGrid
                 'hostTreeCode' => $profile->hostTree->value,
                 'canopy' => $profile->canopy->shortLabel(),
                 'canopyCode' => $profile->canopy->value,
-                'reasons' => array_map(
-                    static fn ($driver): string => $driver->explanation,
-                    $score->drivers(3),
-                ),
             ];
         }
 
-        return $selected;
+        usort(
+            $sectors,
+            static function (array $a, array $b): int {
+                $byArea = $b['areaHa'] <=> $a['areaHa'];
+
+                return $byArea !== 0 ? $byArea : $b['maxScore'] <=> $a['maxScore'];
+            },
+        );
+
+        return array_slice($sectors, 0, self::MAX_SECTORS);
     }
 }

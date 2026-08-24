@@ -45,8 +45,14 @@ final readonly class WeatherField
         $accumulated = $preceding = 0.0;
         $daysWeighted = 0.0;
         $daysWeight = 0.0;
+        $nearestIndex = array_key_first($weights) ?? 0;
+        $nearestWeight = $weights[$nearestIndex] ?? 0.0;
 
         foreach ($weights as $index => $weight) {
+            if ($weight > $nearestWeight) {
+                $nearestWeight = $weight;
+                $nearestIndex = $index;
+            }
             $share = $weight / $totalWeight;
             $conditions = $this->samples[$index]['conditions'];
             $trigger += $conditions->triggerRainMillimetres * $share;
@@ -75,6 +81,7 @@ final readonly class WeatherField
             $soaking,
             $accumulated,
             $preceding,
+            $this->samples[$nearestIndex]['conditions']->soakingEvents,
         );
     }
 
@@ -85,6 +92,7 @@ final readonly class WeatherField
         $accumulated = $preceding = 0.0;
         $daysSum = 0;
         $daysCount = 0;
+        $mergedSpells = [];
 
         foreach ($this->samples as $sample) {
             $conditions = $sample['conditions'];
@@ -101,6 +109,18 @@ final readonly class WeatherField
                 $daysSum += $conditions->daysSinceSoakingRain;
                 $daysCount++;
             }
+            foreach ($conditions->soakingSpells() as $spell) {
+                $key = $spell['daysSince'];
+                if (!isset($mergedSpells[$key]) || $spell['millimetres'] > $mergedSpells[$key]) {
+                    $mergedSpells[$key] = $spell['millimetres'];
+                }
+            }
+        }
+
+        ksort($mergedSpells);
+        $events = [];
+        foreach (array_reverse($mergedSpells, true) as $daysSince => $millimetres) {
+            $events[] = ['daysSince' => (int) $daysSince, 'millimetres' => $millimetres];
         }
 
         return new WeatherConditions(
@@ -114,6 +134,7 @@ final readonly class WeatherField
             $soaking / $count,
             $accumulated / $count,
             $preceding / $count,
+            $events,
         );
     }
 }
