@@ -19,7 +19,8 @@ enum MapLayer: string
     case Geology = 'geology';
     case Moisture = 'moisture';
     case ForestEdge = 'edge';
-    case Rainfall = 'rainfall';
+    case Weather = 'weather';
+    case Access = 'access';
 
     public function label(): string
     {
@@ -33,8 +34,21 @@ enum MapLayer: string
             self::Geology => 'Géologie / substrat',
             self::Moisture => 'Humidité topographique',
             self::ForestEdge => 'Distance à la lisière',
-            self::Rainfall => 'Pluie déclenchante',
+            self::Weather => 'Apport en eau',
+            self::Access => 'Accès (parking + chemin)',
         };
+    }
+
+    /**
+     * Accepts the former rainfall id so old clients keep working.
+     */
+    public static function fromQuery(string $value): self
+    {
+        if ($value === 'rainfall') {
+            return self::Weather;
+        }
+
+        return self::from($value);
     }
 
     public function requiresSpecies(): bool
@@ -53,9 +67,9 @@ enum MapLayer: string
     public function unit(): ?string
     {
         return match ($this) {
-            self::Elevation, self::ForestEdge => 'm',
+            self::Elevation, self::ForestEdge, self::Access => 'm',
             self::Slope => '°',
-            self::Rainfall => 'mm',
+            self::Weather => 'mm',
             default => null,
         };
     }

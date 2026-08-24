@@ -24,7 +24,7 @@ services:
     App\:
         resource: '../src/'
         exclude:
-            - '../src/Domain/**/{Coordinates,BoundingBox,Grid,GridWindow,SurveyArea,TerrainProfile,Exposure,ForestPolygon,GeologyPolygon,WaterFeature,StandCode,Species,HarvestWindow,AltitudeBand,SlopeBand,CriterionScore,SuitabilityScore,SeasonAssessment,FlushClock,WeatherConditions,WeatherField,LayerLegend}.php'
+            - '../src/Domain/**/{Coordinates,BoundingBox,Grid,GridWindow,SurveyArea,TerrainProfile,Exposure,ForestPolygon,GeologyPolygon,WaterFeature,AccessWay,StandCode,Species,HarvestWindow,AltitudeBand,SlopeBand,CriterionScore,SuitabilityScore,SeasonAssessment,FlushClock,WeatherConditions,WeatherField,LayerLegend}.php'
             - '../src/Application/Cartography/{LayerGridQuery,LayerGridView}.php'
             - '../src/Application/Precomputation/PrecomputationReport.php'
             - '../src/Kernel.php'
@@ -56,9 +56,18 @@ services:
             $cacheDirectory: '%app.elevation_cache_dir%'
             $zoom: '%app.elevation_zoom%'
 
+    # Outside kernel.cache_dir so OSM tiles survive cache:clear and keep precompute offline.
+    cache.overpass:
+        class: Symfony\Component\Cache\Adapter\FilesystemAdapter
+        arguments:
+            $namespace: overpass
+            $defaultLifetime: 0
+            $directory: '%kernel.project_dir%/var/overpass'
+
     App\Infrastructure\LandCover\OverpassLandCover:
         arguments:
-            $cacheDirectory: '%app.landcover_cache_dir%'
+            $cache: '@cache.overpass'
+            $legacyCacheDirectory: '%app.landcover_cache_dir%'
 
     # Uses BD Forêt when the converted dataset is present and falls back to OSM otherwise,
     # so a fresh clone precomputes without requiring an IGN download. Water always from OSM.

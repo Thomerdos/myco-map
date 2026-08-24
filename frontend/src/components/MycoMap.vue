@@ -166,7 +166,7 @@ function renderRaster(grid: LayerGrid | null) {
   }
   if (!grid || grid.values.length === 0) return
 
-  const smoothed = grid.legend.categorical ? grid : fillHoles(grid)
+  const smoothed = grid.legend.categorical || grid.sparseNulls ? grid : fillHoles(grid)
   const dataUrl = paintLayer(smoothed, 1)
   if (!dataUrl) return
 
@@ -192,7 +192,7 @@ function renderContours(grid: LayerGrid | null) {
   }
   if (!grid || !props.showContours || grid.legend.categorical) return
 
-  const thresholds = grid.legend.stops.slice(1).map((stop) => stop.value)
+  const thresholds = grid.legend.stops.filter((stop) => stop.label).slice(1).map((stop) => stop.value)
   const features = buildContours(fillHoles(grid), thresholds)
 
   contourLayer.value = L.geoJSON(features, {
@@ -241,7 +241,7 @@ function renderHighlights(grid: LayerGrid | null) {
         iconSize: [56, 18],
         iconAnchor: [28, 9],
       }),
-      title: `${area} ha · indice ${Math.round(sector.minScore)}–${Math.round(sector.maxScore)}`,
+      title: `${area} ha · indice ${Math.round(sector.minScore)}–${Math.round(sector.maxScore)}${sector.accessMeters != null && sector.accessMeters < 9999 ? ` · chemin à ${sector.accessMeters} m` : ''}`,
     })
 
     marker

@@ -77,7 +77,7 @@ final readonly class FlushClock
         return $leading;
     }
 
-    public static function label(Species $species, WeatherConditions $weather): string
+    public static function label(Species $species, WeatherConditions $weather, \DateTimeImmutable $asOf): string
     {
         $leading = self::leadingSpell($species, $weather);
         if ($leading === null) {
@@ -86,12 +86,29 @@ final readonly class FlushClock
 
         $times = self::timetable($species, $weather);
         $name = lcfirst($species->commonName);
+        $since = $leading['daysSince'];
 
         return match ($leading['phase']) {
-            'incubating' => sprintf('Incubation %s — sorties vers J+%d', $name, $times['min']),
-            'starting' => sprintf('Pousse %s en cours — pic vers J+%d', $name, $times['peak']),
-            'peak' => sprintf('Pic de pousse — %s', $name),
-            'declining' => sprintf('Fin de poussée %s (jusqu\'à J+%d)', $name, $times['max']),
+            'incubating' => sprintf(
+                'Incubation %s — sorties vers le %s',
+                $name,
+                self::frenchDay(self::afterStorm($asOf, $since, $times['min'])),
+            ),
+            'starting' => sprintf(
+                'Pousse %s en cours — pic vers le %s',
+                $name,
+                self::frenchDay(self::afterStorm($asOf, $since, $times['peak'])),
+            ),
+            'peak' => sprintf(
+                'Pic de pousse — %s (%s)',
+                $name,
+                self::peakWindow($asOf, $since, $times['peak']),
+            ),
+            'declining' => sprintf(
+                'Fin de poussée %s (jusqu\'au %s)',
+                $name,
+                self::frenchDay(self::afterStorm($asOf, $since, $times['max'])),
+            ),
             'lingering' => sprintf('Encore cueillable — %s', $name),
             default => sprintf('Poussée %s passée', $name),
         };
@@ -100,11 +117,11 @@ final readonly class FlushClock
     /**
      * @return array<string, mixed>
      */
-    public static function decorate(WeatherConditions $weather, Species $species): array
+    public static function decorate(WeatherConditions $weather, Species $species, \DateTimeImmutable $asOf): array
     {
         $leading = self::leadingSpell($species, $weather);
         $payload = $weather->toArray();
-        $payload['label'] = self::label($species, $weather);
+        $payload['label'] = self::label($species, $weather, $asOf);
         $payload['flushDaysSince'] = $leading['daysSince'] ?? null;
         $payload['flushPhase'] = $leading['phase'] ?? 'none';
         $payload['flushMillimetres'] = isset($leading) ? round($leading['millimetres'], 1) : null;
@@ -112,7 +129,7 @@ final readonly class FlushClock
         return $payload;
     }
 
-    public static function explain(Species $species, WeatherConditions $weather): string
+    public static function explain(Species $species, WeatherConditions $weather, \DateTimeImmutable $asOf): string
     {
         $leading = self::leadingSpell($species, $weather);
         $times = self::timetable($species, $weather);
@@ -126,34 +143,43 @@ final readonly class FlushClock
             );
         }
 
+        $since = $leading['daysSince'];
+        $storm = self::frenchDay(self::afterStorm($asOf, $since, 0));
+
         $phase = match ($leading['phase']) {
             'incubating' => sprintf(
-                'il y a %d j : incubation, premières sorties vers J+%d',
-                $leading['daysSince'],
-                $times['min'],
+                'il y a %d j (%s) : incubation, premières sorties vers le %s',
+                $since,
+                $storm,
+                self::frenchDay(self::afterStorm($asOf, $since, $times['min'])),
             ),
             'starting' => sprintf(
-                'il y a %d j : pousse en cours (pic vers J+%d)',
-                $leading['daysSince'],
-                $times['peak'],
+                'il y a %d j (%s) : pousse en cours (pic vers le %s)',
+                $since,
+                $storm,
+                self::frenchDay(self::afterStorm($asOf, $since, $times['peak'])),
             ),
             'peak' => sprintf(
-                'il y a %d j : pic de pousse (idéal vers J+%d)',
-                $leading['daysSince'],
-                $times['peak'],
+                'il y a %d j (%s) : pic de pousse (idéal %s)',
+                $since,
+                $storm,
+                self::peakWindow($asOf, $since, $times['peak']),
             ),
             'declining' => sprintf(
-                'il y a %d j : fin de poussée (fenêtre jusqu\'à J+%d)',
-                $leading['daysSince'],
-                $times['max'],
+                'il y a %d j (%s) : fin de poussée (fenêtre jusqu\'au %s)',
+                $since,
+                $storm,
+                self::frenchDay(self::afterStorm($asOf, $since, $times['max'])),
             ),
             'lingering' => sprintf(
-                'il y a %d j : carpophores encore cueillables quelques jours',
-                $leading['daysSince'],
+                'il y a %d j (%s) : carpophores encore cueillables quelques jours',
+                $since,
+                $storm,
             ),
             default => sprintf(
-                'il y a %d j : cette poussée est derrière nous',
-                $leading['daysSince'],
+                'il y a %d j (%s) : cette poussée est derrière nous',
+                $since,
+                $storm,
             ),
         };
 
@@ -171,21 +197,47 @@ final readonly class FlushClock
             && $latest['millimetres'] >= 15.0
         ) {
             $text .= sprintf(
-                ' · orage plus récent (%.0f mm il y a %d j) pas encore productif',
+                ' · orage plus récent (%.0f mm le %s) pas encore productif',
                 $latest['millimetres'],
-                $latest['daysSince'],
+                self::frenchDay(self::afterStorm($asOf, $latest['daysSince'], 0)),
             );
         }
 
         if ($times['min'] !== $species->flushDelayMinDays) {
             $text .= sprintf(
-                ' · délais allongés par le froid (sorties J+%d au lieu de J+%d)',
-                $times['min'],
+                ' · délais allongés par le froid (sorties le %s, %d j habituellement)',
+                self::frenchDay(self::afterStorm($asOf, $since, $times['min'])),
                 $species->flushDelayMinDays,
             );
         }
 
         return $text;
+    }
+
+    /** Calendar day of a flush delay measured from the soaking spell. */
+    private static function afterStorm(\DateTimeImmutable $asOf, int $daysSince, int $delay): \DateTimeImmutable
+    {
+        return $asOf->modify(sprintf('%+d days', $delay - $daysSince));
+    }
+
+    private static function frenchDay(\DateTimeImmutable $date): string
+    {
+        $months = [1 => 'janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+
+        return sprintf('%d %s', (int) $date->format('j'), $months[(int) $date->format('n')]);
+    }
+
+    /** Peak phase lasts the peak delay day and the following one. */
+    private static function peakWindow(\DateTimeImmutable $asOf, int $daysSince, int $peak): string
+    {
+        $start = self::afterStorm($asOf, $daysSince, $peak);
+        $end = self::afterStorm($asOf, $daysSince, $peak + 1);
+
+        if ($start->format('n') === $end->format('n') && $start->format('Y') === $end->format('Y')) {
+            return sprintf('%d–%s', (int) $start->format('j'), self::frenchDay($end));
+        }
+
+        return sprintf('%s–%s', self::frenchDay($start), self::frenchDay($end));
     }
 
     private static function curve(Species $species, WeatherConditions $weather, int $days): float

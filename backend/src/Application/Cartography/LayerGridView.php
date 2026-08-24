@@ -31,6 +31,7 @@ final readonly class LayerGridView
         public ?array $species,
         public ScoringMode $scoringMode = ScoringMode::Moment,
         public ?string $asOfDate = null,
+        public bool $sparseNulls = false,
     ) {
     }
 
@@ -56,6 +57,7 @@ final readonly class LayerGridView
             'sectors' => $this->sectors,
             'weather' => $this->weather,
             'species' => $this->species,
+            'sparseNulls' => $this->sparseNulls,
         ];
     }
 }

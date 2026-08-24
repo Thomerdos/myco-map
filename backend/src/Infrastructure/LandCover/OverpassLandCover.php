@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\LandCover;
 
 use App\Domain\Geo\BoundingBox;
+use App\Domain\Terrain\AccessWay;
 use App\Domain\Terrain\CanopyClosure;
 use App\Domain\Terrain\ForestCover;
 use App\Domain\Terrain\ForestPolygon;
@@ -12,6 +13,8 @@ use App\Domain\Terrain\HostTree;
 use App\Domain\Terrain\LandCoverSource;
 use App\Domain\Terrain\WaterFeature;
 use Psr\Log\LoggerInterface;
+use Symfony\Contracts\Cache\CacheInterface;
+use Symfony\Contracts\Cache\ItemInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
@@ -35,7 +38,8 @@ final class OverpassLandCover implements LandCoverSource
     public function __construct(
         private readonly HttpClientInterface $httpClient,
         private readonly LoggerInterface $logger,
-        private readonly string $cacheDirectory,
+        private readonly CacheInterface $cache,
+        private readonly string $legacyCacheDirectory,
     ) {
     }
 
@@ -85,6 +89,26 @@ final class OverpassLandCover implements LandCoverSource
             }
 
             yield $features;
+        }
+    }
+
+    public function accessWays(BoundingBox $bounds): iterable
+    {
+        foreach ($this->chunks($bounds) as $index => $chunk) {
+            $elements = $this->query(
+                sprintf('access-%d', $index),
+                $this->accessQuery($chunk),
+            );
+
+            $ways = [];
+            foreach ($elements as $element) {
+                $way = $this->toAccessWay($element);
+                if ($way !== null) {
+                    $ways[] = $way;
+                }
+            }
+
+            yield $ways;
         }
     }
 
@@ -146,6 +170,21 @@ final class OverpassLandCover implements LandCoverSource
             QL;
     }
 
+    private function accessQuery(BoundingBox $box): string
+    {
+        $bbox = $this->bbox($box);
+
+        return <<<QL
+            [out:json][timeout:180];
+            (
+              way["highway"~"^(primary|secondary|tertiary|unclassified|residential|living_street|service|track|path|footway|bridleway|cycleway)$"]({$bbox});
+              node["amenity"="parking"]({$bbox});
+              way["amenity"="parking"]({$bbox});
+            );
+            out geom;
+            QL;
+    }
+
     private function bbox(BoundingBox $box): string
     {
         return sprintf('%.5f,%.5f,%.5f,%.5f', $box->south, $box->west, $box->north, $box->east);
@@ -160,15 +199,58 @@ final class OverpassLandCover implements LandCoverSource
      */
     private function query(string $cacheKey, string $query): array
     {
-        $path = sprintf('%s/%s.json', $this->cacheDirectory, $cacheKey);
+        try {
+            return $this->cache->get($cacheKey, function (ItemInterface $item) use ($cacheKey, $query): array {
+                $item->expiresAfter(null);
 
-        if (is_file($path)) {
+                $legacy = $this->legacyElements($cacheKey);
+                if ($legacy !== null) {
+                    return $legacy;
+                }
+
+                return $this->downloadElements($query, $cacheKey);
+            });
+        } catch (OverpassUnavailable $exception) {
+            $this->unavailableChunks++;
+            $this->logger->error('Chunk Overpass abandonné', [
+                'chunk' => $cacheKey,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return [];
+        }
+    }
+
+    /**
+     * JSON files written before the Symfony FilesystemAdapter pool existed.
+     *
+     * @return array<int, array<string, mixed>>|null
+     */
+    private function legacyElements(string $cacheKey): ?array
+    {
+        $paths = [
+            sprintf('%s/%s.json', $this->legacyCacheDirectory, $cacheKey),
+            sprintf('%s/landcover-rw/%s.json', \dirname($this->legacyCacheDirectory), $cacheKey),
+        ];
+
+        foreach ($paths as $path) {
+            if (!is_file($path)) {
+                continue;
+            }
             $decoded = json_decode((string) file_get_contents($path), true);
-            if (\is_array($decoded) && isset($decoded['elements'])) {
+            if (\is_array($decoded) && isset($decoded['elements']) && \is_array($decoded['elements'])) {
                 return $decoded['elements'];
             }
         }
 
+        return null;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function downloadElements(string $query, string $cacheKey): array
+    {
         $lastError = 'inconnue';
 
         for ($attempt = 1; $attempt <= self::MAX_ATTEMPTS; $attempt++) {
@@ -191,12 +273,11 @@ final class OverpassLandCover implements LandCoverSource
                 }
 
                 $decoded = json_decode($content, true);
-                if (!\is_array($decoded) || !isset($decoded['elements'])) {
+                if (!\is_array($decoded) || !isset($decoded['elements']) || !\is_array($decoded['elements'])) {
                     $lastError = 'réponse Overpass inattendue';
                     continue;
                 }
 
-                $this->store($path, $content);
                 sleep(self::COURTESY_DELAY_SECONDS);
 
                 return $decoded['elements'];
@@ -210,13 +291,7 @@ final class OverpassLandCover implements LandCoverSource
             sleep(8 * $attempt);
         }
 
-        $this->unavailableChunks++;
-        $this->logger->error('Chunk Overpass abandonné', [
-            'chunk' => $cacheKey,
-            'error' => $lastError,
-        ]);
-
-        return [];
+        throw new OverpassUnavailable($lastError);
     }
 
     /** @param array<string, mixed> $element */
@@ -269,13 +344,40 @@ final class OverpassLandCover implements LandCoverSource
         return $points;
     }
 
-    private function store(string $path, string $content): void
+    /** @param array<string, mixed> $element */
+    private function toAccessWay(array $element): ?AccessWay
     {
-        $directory = \dirname($path);
-        if (!is_dir($directory) && !@mkdir($directory, 0o775, true) && !is_dir($directory)) {
-            throw new \RuntimeException(sprintf('Impossible de créer %s', $directory));
+        $tags = $element['tags'] ?? [];
+        $parkable = OsmWayAccess::isParkable($tags);
+        $walkable = OsmWayAccess::isWalkable($tags);
+        if (!$parkable && !$walkable) {
+            return null;
         }
 
-        file_put_contents($path, $content);
+        $points = $this->pointsFromElement($element);
+        if ($points === []) {
+            return null;
+        }
+
+        $isArea = $parkable && !$walkable && \count($points) >= 3;
+
+        return new AccessWay($points, $parkable, $walkable, $isArea);
+    }
+
+    /**
+     * @param array<string, mixed> $element
+     * @return list<array{0: float, 1: float}>
+     */
+    private function pointsFromElement(array $element): array
+    {
+        if (($element['type'] ?? '') === 'node') {
+            if (!isset($element['lat'], $element['lon'])) {
+                return [];
+            }
+
+            return [[(float) $element['lat'], (float) $element['lon']]];
+        }
+
+        return $this->pointsFrom($element['geometry'] ?? []);
     }
 }

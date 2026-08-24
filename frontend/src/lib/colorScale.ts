@@ -53,15 +53,14 @@ export function createColorScale(legend: Legend): (value: number) => Rgb {
 const FADE_FLOOR = 0.04
 
 /**
- * Opacity ramp for the potential mask: cool scores stay almost transparent so the
- * 70–85 plateau does not veil the map. Warm colour (the last two legend stops, from 90)
- * is the only band that reads as a target.
+ * Opacity ramp for the potential mask. Thresholds match SuitabilityLevel so extra
+ * interpolation stops (hue holds) do not shift the fade. Gold wash 62–90 stays
+ * readable; magenta ≥ 90 is near-opaque so those patches pop first.
  */
 export function createOpacityRamp(legend: Legend): (value: number) => number {
-  const stops = legend.stops
-  const hotFrom = stops.length >= 2 ? stops[stops.length - 2].value : 90
-  const hotTo = stops[stops.length - 1]?.value ?? 96
-  const coolUntil = stops.length >= 3 ? stops[stops.length - 3].value : 78
+  const hotTo = legend.stops[legend.stops.length - 1]?.value ?? 96
+  const hotFrom = 90
+  const coolUntil = 62
 
   return (value: number) => {
     if (value <= coolUntil) {
@@ -70,10 +69,10 @@ export function createOpacityRamp(legend: Legend): (value: number) => number {
     }
     if (value < hotFrom) {
       const t = (value - coolUntil) / (hotFrom - coolUntil || 1)
-      return 0.14 + 0.28 * t
+      return 0.36 + 0.18 * t
     }
     const t = Math.max(0, Math.min(1, (value - hotFrom) / (hotTo - hotFrom || 1)))
-    return 0.55 + 0.45 * t
+    return 0.92 + 0.08 * t
   }
 }
 

@@ -54,9 +54,11 @@ final readonly class OpenMeteoWeather implements WeatherSource
 
         /** @var array{samples: list<array{lat: float, lng: float, daily: array<string, mixed>, hourly: array<string, mixed>}>, degraded: bool} $payload */
         $payload = $this->cache->get($cacheKey, function (ItemInterface $item) use ($bounds): array {
-            $item->expiresAfter(3600 * 2);
+            $downloaded = $this->download($bounds);
+            // Do not keep a fallback for two hours after a 503: retry soon.
+            $item->expiresAfter($downloaded['degraded'] ? 120 : 3600 * 2);
 
-            return $this->download($bounds);
+            return $downloaded;
         });
 
         $samples = [];
@@ -121,6 +123,13 @@ final readonly class OpenMeteoWeather implements WeatherSource
                 ],
                 'timeout' => 45,
             ]);
+
+            $status = $response->getStatusCode();
+            if ($status !== 200) {
+                $this->logger->warning('Open-Meteo indisponible', ['status' => $status]);
+
+                return $this->fallback($bounds);
+            }
 
             $payload = $response->toArray(false);
         } catch (\Throwable $exception) {

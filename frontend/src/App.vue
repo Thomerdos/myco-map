@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Dialog } from '@vuetify/v0'
+import { Dialog } from '@vuetify/v0'
 import { useDebounceFn, useMediaQuery } from '@vueuse/core'
 import { computed, onMounted, ref, watch } from 'vue'
 import ControlPanel from './components/ControlPanel.vue'
@@ -21,6 +21,7 @@ const projectionDate = ref('')
 const opacity = ref(0.72)
 const showContours = ref(false)
 const showSpots = ref(true)
+const accessibleOnly = ref(true)
 const basemap = ref('topo')
 const selectedPoint = ref<{ lat: number; lng: number } | null>(null)
 const detailOpen = ref(false)
@@ -58,8 +59,10 @@ watch(
   isMobile,
   (mobile) => {
     controlsOpen.value = !mobile
-    if (!mobile) return
-    // Mobile sheets start closed unless a point is already selected.
+    if (!mobile) {
+      detailOpen.value = true
+      return
+    }
     if (!selectedPoint.value) detailOpen.value = false
   },
   { immediate: true },
@@ -94,6 +97,7 @@ async function loadLayer(bounds: Bounds) {
       maxCells: 70000,
       mode: scoringMode.value,
       date: habitatOnly.value ? undefined : projectionDate.value || undefined,
+      accessible: accessibleOnly.value,
     })
     if (token === requestToken) grid.value = result
   } catch (cause) {
@@ -195,6 +199,11 @@ function onProjectionDateChange(date: string) {
   if (selectedPoint.value) void onLocationPicked(selectedPoint.value)
 }
 
+function onAccessibleOnlyChange(value: boolean) {
+  accessibleOnly.value = value
+  if (viewport) void loadLayer(viewport)
+}
+
 const controlPanelProps = computed(() => ({
   layers: layerOptions.value,
   species: context.value?.species ?? [],
@@ -208,6 +217,7 @@ const controlPanelProps = computed(() => ({
   opacity: opacity.value,
   showContours: showContours.value,
   showSpots: showSpots.value,
+  accessibleOnly: accessibleOnly.value,
   basemap: basemap.value,
   grid: grid.value,
   loading: loadingLayer.value,
@@ -260,11 +270,12 @@ const controlPanelProps = computed(() => ({
             @update:opacity="opacity = $event"
             @update:show-contours="showContours = $event"
             @update:show-spots="showSpots = $event"
+            @update:accessible-only="onAccessibleOnlyChange"
             @update:basemap="basemap = $event"
           />
         </aside>
 
-        <div v-if="grid && !grid.legend.categorical" class="pointer-events-auto absolute bottom-2 left-0 w-[min(240px,calc(100vw-1.5rem))] rounded-[10px] border border-[#d9d0bc] bg-surface/92 px-3 py-2">
+        <div v-if="isMobile && grid && !grid.legend.categorical" class="pointer-events-auto absolute bottom-2 left-0 w-[min(240px,calc(100vw-1.5rem))] rounded-[10px] border border-[#d9d0bc] bg-surface/92 px-3 py-2">
           <span class="mb-1 block text-[0.7rem] uppercase tracking-wider text-secondary">{{ grid.legend.title }}</span>
           <div class="h-2.5 rounded-md border border-[#cfc6b1]" :style="{ background: `linear-gradient(to right, ${grid.legend.stops.map((stop) => stop.color).join(', ')})` }" />
           <div class="mt-1 flex justify-between text-[0.68rem] text-secondary">
@@ -273,33 +284,32 @@ const controlPanelProps = computed(() => ({
           </div>
         </div>
 
-        <p v-if="activeSpeciesMeta && !isMobile" class="pointer-events-none absolute right-0 bottom-2 m-0 max-w-[min(320px,calc(100vw-2rem))] rounded-[10px] bg-primary/90 px-3 py-2 text-xs leading-snug text-on-primary">
+        <aside
+          v-if="!isMobile"
+          class="pointer-events-auto absolute top-0 right-0 max-h-full w-[min(360px,calc(100vw-1.5rem))] overflow-auto rounded-[14px] border border-[#d9d0bc] shadow-xl"
+        >
+          <DetailPanel
+            :report="report"
+            :weather="habitatOnly ? null : (report?.weather ?? grid?.weather ?? null)"
+            :projection-date="projectionDate"
+            :projection-from="projectionFrom"
+            :sectors="grid?.sectors ?? []"
+            :accessible-only="accessibleOnly"
+            :expect-sectors="grid?.layer === 'potential'"
+            :habitat-only="habitatOnly"
+            :loading="loadingReport"
+            @highlight-picked="onLocationPicked"
+          />
+        </aside>
+
+        <p
+          v-if="activeSpeciesMeta && !isMobile"
+          class="pointer-events-none absolute bottom-2 m-0 max-w-[min(320px,calc(100vw-2rem))] rounded-[10px] bg-primary/90 px-3 py-2 text-xs leading-snug text-on-primary right-[min(372px,calc(100vw-1.5rem))]"
+        >
           {{ activeSpeciesMeta.summary }}
         </p>
       </div>
     </div>
-
-    <aside
-      v-if="!isMobile"
-      class="ui-layer absolute top-0 right-0 h-full w-[min(360px,100vw)] bg-surface shadow-[-8px_0_28px_rgb(0_0_0_/_18%)] transition-transform duration-200"
-      :class="detailOpen ? 'translate-x-0' : 'translate-x-full'"
-    >
-      <Button.Root
-        class="absolute top-2 right-2 z-10 rounded-md border border-[#cfc6b1] bg-[#fffdf8] px-2 py-1 text-xs"
-        @click="detailOpen = false"
-      >
-        <Button.Content>Fermer</Button.Content>
-      </Button.Root>
-      <div class="h-full overflow-y-auto pt-8">
-        <DetailPanel
-          :report="report"
-          :sectors="grid?.sectors ?? []"
-          :habitat-only="habitatOnly"
-          :loading="loadingReport"
-          @highlight-picked="onLocationPicked"
-        />
-      </div>
-    </aside>
 
     <p v-if="error" class="ui-layer absolute top-3 left-1/2 m-0 max-w-[min(480px,calc(100vw-1.5rem))] -translate-x-1/2 rounded-lg bg-[#f8e0dc] px-4 py-2 text-sm text-error">
       {{ error }}
@@ -320,6 +330,7 @@ const controlPanelProps = computed(() => ({
           @update:opacity="opacity = $event"
           @update:show-contours="showContours = $event"
           @update:show-spots="showSpots = $event"
+          @update:accessible-only="onAccessibleOnlyChange"
           @update:basemap="basemap = $event"
         />
       </Dialog.Content>
@@ -328,12 +339,17 @@ const controlPanelProps = computed(() => ({
     <Dialog.Root v-if="isMobile" v-model="detailOpen">
       <Dialog.Content class="sheet-dialog overflow-y-auto">
         <div class="flex items-center justify-between px-4 pt-3">
-          <Dialog.Title class="text-sm font-semibold">Détail du point</Dialog.Title>
+          <Dialog.Title class="text-sm font-semibold">Lieu et conditions</Dialog.Title>
           <Dialog.Close class="rounded-md border border-[#cfc6b1] bg-[#fffdf8] px-2 py-1 text-xs">Fermer</Dialog.Close>
         </div>
         <DetailPanel
           :report="report"
+          :weather="habitatOnly ? null : (report?.weather ?? grid?.weather ?? null)"
+          :projection-date="projectionDate"
+          :projection-from="projectionFrom"
           :sectors="grid?.sectors ?? []"
+          :accessible-only="accessibleOnly"
+          :expect-sectors="grid?.layer === 'potential'"
           :habitat-only="habitatOnly"
           :loading="loadingReport"
           @highlight-picked="onLocationPicked"

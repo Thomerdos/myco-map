@@ -14,26 +14,13 @@ final readonly class LayerLegendFactory
     public function create(MapLayer $layer, ScoringMode $mode = ScoringMode::Moment): LayerLegend
     {
         return match ($layer) {
-            // Weather and season are near-uniform across a viewport, so in a good spell
-            // most forest sits in the 70s–80s. Warm colours start at 90, the first band
-            // that is actually rare. Green is avoided: the basemap is already forest.
-            MapLayer::Potential => $mode === ScoringMode::Habitat
-                ? new LayerLegend('Potentiel d\'habitat', null, false, [
-                    ['value' => 0, 'label' => 'À éviter', 'color' => '#242733'],
-                    ['value' => 40, 'label' => 'Faible', 'color' => '#2f3348'],
-                    ['value' => 62, 'label' => 'Moyen', 'color' => '#3f4a6b'],
-                    ['value' => 78, 'label' => 'Correct', 'color' => '#6f4a78'],
-                    ['value' => 90, 'label' => 'Prometteur', 'color' => '#ef8b3c'],
-                    ['value' => 96, 'label' => 'Exceptionnel', 'color' => '#ffe473'],
-                ], true)
-                : new LayerLegend($layer->label(), null, false, [
-                    ['value' => 0, 'label' => 'À éviter', 'color' => '#242733'],
-                    ['value' => 40, 'label' => 'Faible', 'color' => '#2f3348'],
-                    ['value' => 62, 'label' => 'Moyen', 'color' => '#3f4a6b'],
-                    ['value' => 78, 'label' => 'Correct', 'color' => '#6f4a78'],
-                    ['value' => 90, 'label' => 'Prometteur', 'color' => '#ef8b3c'],
-                    ['value' => 96, 'label' => 'Exceptionnel', 'color' => '#ffe473'],
-                ], true),
+            // Two families so the eye can group at a glance: gold wash for the common
+            // 70–85 forest plateau, then a hard jump to magenta (≥ 90) that does not
+            // exist on the basemap. Green is avoided. The empty stop holds gold so
+            // RGB interpolation never turns 80–89 into muddy mauve.
+            MapLayer::Potential => $this->potentialLegend(
+                $mode === ScoringMode::Habitat ? 'Potentiel d\'habitat' : $layer->label(),
+            ),
             MapLayer::Elevation => new LayerLegend($layer->label(), 'm', false, [
                 ['value' => 200, 'label' => '200 m', 'color' => '#1a6b3c'],
                 ['value' => 700, 'label' => '700 m', 'color' => '#8fbf4a'],
@@ -80,16 +67,37 @@ final readonly class LayerLegendFactory
                 ['value' => 300, 'label' => '300 m', 'color' => '#6aa84f'],
                 ['value' => 800, 'label' => 'Cœur de massif', 'color' => '#1d5c33'],
             ]),
-            // Soft beige→cyan disappears on the green OSM forest. Warm dry tones and
-            // saturated cool wet tones keep orographic contrast readable at typical
-            // trigger totals (often ~10–35 mm across a massif viewport).
-            MapLayer::Rainfall => new LayerLegend($layer->label(), 'mm', false, [
+            // Continuous millimetres of the water the model uses (episode 65 % +
+            // 26-day accumulation 35 %). Same warm→cool ramp as before so orographic
+            // contrast stays readable on the forest basemap.
+            MapLayer::Weather => new LayerLegend($layer->label(), 'mm', false, [
                 ['value' => 0, 'label' => 'Sec', 'color' => '#f5c542'],
-                ['value' => 10, 'label' => '10 mm', 'color' => '#ff6b3d'],
-                ['value' => 20, 'label' => '20 mm', 'color' => '#d946ef'],
-                ['value' => 30, 'label' => '30 mm', 'color' => '#2563eb'],
-                ['value' => 45, 'label' => '45 mm et plus', 'color' => '#0b1f6b'],
+                ['value' => 15, 'label' => '15 mm', 'color' => '#ff6b3d'],
+                ['value' => 30, 'label' => '30 mm', 'color' => '#d946ef'],
+                ['value' => 45, 'label' => '45 mm', 'color' => '#2563eb'],
+                ['value' => 70, 'label' => '70 mm et plus', 'color' => '#0b1f6b'],
+            ]),
+            // Low metres (near a trailhead) must pop; unreachable cells are left
+            // unpainted by the renderer so this ramp only covers the walkable budget.
+            MapLayer::Access => new LayerLegend($layer->label(), 'm', false, [
+                ['value' => 0, 'label' => 'Au départ', 'color' => '#22d3ee'],
+                ['value' => 500, 'label' => '500 m', 'color' => '#0ea5e9'],
+                ['value' => 1000, 'label' => '1 km', 'color' => '#2563eb'],
+                ['value' => 1500, 'label' => '1,5 km à pied', 'color' => '#1e3a8a'],
             ]),
         };
+    }
+
+    private function potentialLegend(string $title): LayerLegend
+    {
+        return new LayerLegend($title, null, false, [
+            ['value' => 0, 'label' => 'À éviter', 'color' => '#14161e'],
+            ['value' => 40, 'label' => 'Faible', 'color' => '#2a3142'],
+            ['value' => 62, 'label' => 'Moyen', 'color' => '#4a5568'],
+            ['value' => 78, 'label' => 'Correct', 'color' => '#ffc01a'],
+            ['value' => 86, 'label' => '', 'color' => '#ffd24d'],
+            ['value' => 90, 'label' => 'Prometteur', 'color' => '#c026d3'],
+            ['value' => 96, 'label' => 'Exceptionnel', 'color' => '#ff4ef0'],
+        ], true);
     }
 }

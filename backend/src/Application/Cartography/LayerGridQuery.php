@@ -17,6 +17,7 @@ final readonly class LayerGridQuery
         public int $maxCells,
         public \DateTimeImmutable $date,
         public ScoringMode $scoringMode = ScoringMode::Moment,
+        public bool $accessibleOnly = true,
     ) {
     }
 }

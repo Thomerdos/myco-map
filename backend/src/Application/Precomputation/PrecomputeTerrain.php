@@ -6,6 +6,7 @@ namespace App\Application\Precomputation;
 
 use App\Domain\Geo\Grid;
 use App\Domain\Geo\SurveyArea;
+use App\Domain\Terrain\AccessWay;
 use App\Domain\Terrain\CanopyClosure;
 use App\Domain\Terrain\ElevationSampler;
 use App\Domain\Terrain\ForestCover;
@@ -17,6 +18,7 @@ use App\Domain\Terrain\Substrate;
 use App\Domain\Terrain\TerrainCellStore;
 use App\Domain\Terrain\TerrainProfile;
 use App\Infrastructure\Raster\ChamferDistance;
+use App\Infrastructure\Raster\PathNetworkAccess;
 use App\Infrastructure\Raster\PolygonRasterizer;
 use App\Infrastructure\Raster\TerrainDerivatives;
 
@@ -34,6 +36,7 @@ final readonly class PrecomputeTerrain
         private TerrainCellStore $cellStore,
         private PolygonRasterizer $rasterizer,
         private ChamferDistance $distance,
+        private PathNetworkAccess $pathAccess,
         private TerrainDerivatives $derivatives,
     ) {
     }
@@ -60,6 +63,7 @@ final readonly class PrecomputeTerrain
         [$cover, $forestCount] = $this->rasterizeForest($grid, $progress);
         [$geology, $geologyCount] = $this->rasterizeGeology($grid, $progress);
         [$water, $waterCount] = $this->rasterizeWater($grid, $progress);
+        [$park, $path, $accessWays] = $this->rasterizeAccess($grid, $progress);
 
         $progress->stageStarted('Distances aux lisières et à l\'eau');
         $insideForest = $this->distance->compute(
@@ -79,12 +83,16 @@ final readonly class PrecomputeTerrain
         );
         $progress->stageFinished('Distances aux lisières et à l\'eau');
 
+        $progress->stageStarted('Accès parking + chemins');
+        $access = $this->pathAccess->compute($park, $path, $derived['slope'], $grid);
+        $progress->stageFinished('Accès parking + chemins');
+
         $this->cellStore->prepareStorage();
 
         $progress->stageStarted('Écriture de la base précalculée');
         $written = $this->cellStore->replaceAll(
             $grid,
-            $this->buildCells($grid, $elevation, $derived, $cover, $geology, $insideForest, $towardsForest, $towardsWater, $progress),
+            $this->buildCells($grid, $elevation, $derived, $cover, $geology, $insideForest, $towardsForest, $towardsWater, $access, $progress),
         );
         $progress->stageFinished('Écriture de la base précalculée');
 
@@ -97,6 +105,7 @@ final readonly class PrecomputeTerrain
             forestPolygons: $forestCount,
             geologyPolygons: $geologyCount,
             waterFeatures: $waterCount,
+            accessWays: $accessWays,
             unavailableChunks: $this->landCover->unavailableChunks(),
             durationSeconds: microtime(true) - $startedAt,
         );
@@ -225,6 +234,58 @@ final readonly class PrecomputeTerrain
         return [$water, $featureCount];
     }
 
+    /** @return array{0: \SplFixedArray<int>, 1: \SplFixedArray<int>, 2: int} */
+    private function rasterizeAccess(Grid $grid, PrecomputationProgress $progress): array
+    {
+        $stage = 'Routes, parkings et chemins (OpenStreetMap)';
+        $progress->stageStarted($stage);
+
+        $total = $grid->cellCount();
+        /** @var \SplFixedArray<int> $park */
+        $park = new \SplFixedArray($total);
+        /** @var \SplFixedArray<int> $path */
+        $path = new \SplFixedArray($total);
+        for ($i = 0; $i < $total; $i++) {
+            $park[$i] = 0;
+            $path[$i] = 0;
+        }
+
+        $wayCount = 0;
+        foreach ($this->landCover->accessWays($grid->bounds) as $chunk) {
+            foreach ($chunk as $way) {
+                $wayCount++;
+                if ($way->parkable) {
+                    $this->stampAccess($park, $grid, $way);
+                }
+                if ($way->walkable) {
+                    $this->stampAccess($path, $grid, $way);
+                }
+            }
+            $progress->stageAdvanced($stage, $wayCount, 0);
+        }
+
+        $progress->stageFinished($stage);
+
+        return [$park, $path, $wayCount];
+    }
+
+    private function stampAccess(\SplFixedArray $raster, Grid $grid, AccessWay $way): void
+    {
+        if ($way->isArea && \count($way->points) >= 3) {
+            $this->rasterizer->fillRing($raster, $grid, $way->points, 1);
+
+            return;
+        }
+        if (\count($way->points) === 1) {
+            $this->rasterizer->stampPoint($raster, $grid, $way->points[0], 1);
+
+            return;
+        }
+        if (\count($way->points) >= 2) {
+            $this->rasterizer->stampPolyline($raster, $grid, $way->points, 1);
+        }
+    }
+
     /**
      * @param \SplFixedArray<float> $elevation
      * @param array{slope: \SplFixedArray<float>, aspect: \SplFixedArray<float>, curvature: \SplFixedArray<float>} $derived
@@ -233,6 +294,7 @@ final readonly class PrecomputeTerrain
      * @param \SplFixedArray<int> $insideForest
      * @param \SplFixedArray<int> $towardsForest
      * @param \SplFixedArray<int> $towardsWater
+     * @param \SplFixedArray<int> $access
      * @return \Generator<int, array{column: int, row: int, profile: TerrainProfile}>
      */
     private function buildCells(
@@ -244,6 +306,7 @@ final readonly class PrecomputeTerrain
         \SplFixedArray $insideForest,
         \SplFixedArray $towardsForest,
         \SplFixedArray $towardsWater,
+        \SplFixedArray $access,
         PrecomputationProgress $progress,
     ): \Generator {
         $stage = 'Écriture de la base précalculée';
@@ -275,6 +338,7 @@ final readonly class PrecomputeTerrain
                         hostTree: StandCode::host($packed),
                         canopy: StandCode::canopy($packed),
                         substrate: Substrate::tryFrom($geology[$index]) ?? Substrate::Unknown,
+                        accessDistanceMeters: $access[$index],
                     ),
                 ];
             }

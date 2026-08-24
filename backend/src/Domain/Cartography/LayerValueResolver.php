@@ -14,6 +14,7 @@ final readonly class LayerValueResolver
         TerrainProfile $terrain,
         WeatherConditions $weather,
         float $potential,
+        float $waterMillimetres = 0.0,
     ): float {
         return match ($layer) {
             MapLayer::Potential => $potential,
@@ -27,7 +28,8 @@ final readonly class LayerValueResolver
             MapLayer::Geology => (float) $terrain->substrate->value,
             MapLayer::Moisture => $terrain->moistureIndex() * 100,
             MapLayer::ForestEdge => (float) max(0, $terrain->edgeDistanceMeters),
-            MapLayer::Rainfall => $weather->triggerRainMillimetres,
+            MapLayer::Weather => $waterMillimetres,
+            MapLayer::Access => (float) $terrain->accessDistanceMeters,
         };
     }
 }

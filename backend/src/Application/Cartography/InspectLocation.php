@@ -80,11 +80,12 @@ final readonly class InspectLocation
                 'canopyCode' => $profile->canopy->value,
                 'edgeDistance' => $profile->edgeDistanceMeters,
                 'waterDistance' => $profile->waterDistanceMeters,
+                'accessDistance' => $profile->accessDistanceMeters,
                 'moisture' => round($profile->moistureIndex() * 100),
                 'geology' => $profile->substrate->label(),
                 'geologyCode' => $profile->substrate->value,
             ],
-            'weather' => FlushClock::decorate($weather, $species),
+            'weather' => FlushClock::decorate($weather, $species, $date),
             'scoringMode' => $mode->value,
             'asOfDate' => $date->format('Y-m-d'),
             'species' => [

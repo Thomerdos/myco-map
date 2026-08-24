@@ -98,7 +98,7 @@ final readonly class ProjectScoreHorizon
                 'average' => $count > 0 ? round($sum / $count, 1) : null,
                 'best' => $best !== null ? round($best, 1) : null,
                 'inSeason' => $season->isInSeason(),
-                'weather' => FlushClock::decorate($weatherAvg, $species)
+                'weather' => FlushClock::decorate($weatherAvg, $species, $date)
                     + ['degraded' => $weatherField->degraded],
             ];
         }
