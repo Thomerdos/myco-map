@@ -7,9 +7,9 @@ L'application croise relief, couvert forestier, hydrographie et météo récente
 ## Ce que fait l'application
 
 - **Carte raster continue** à **50 m** de résolution : le couvert, le relief dérivé (pente, exposition, courbure) et les distances lisière / eau sont plus fins qu'à 100 m ; les masques continus sont lissés à l'affichage, le couvert reste catégoriel (carrés nets).
-- **Masques de critères** interchangeables : chance de trouver (score combiné), altitude, exposition, pente, couvert forestier, humidité topographique, distance à la lisière, pluie déclenchante.
+- **Masques de critères** interchangeables : chance de trouver (score combiné), altitude, exposition, pente, couvert forestier, humidité topographique, distance à la lisière, apport en eau, accès parking + chemin.
 - **Six espèces** avec profils d'habitat distincts et fenêtres de cueillette : cèpe, trompette de la mort, chanterelles, girolle, pied de mouton, morille.
-- **Détail au clic** : altitude, pente, exposition, couvert, essence dominante, densité, distance lisière et eau, plus la décomposition complète du score critère par critère.
+- **Détail au clic** : altitude, pente, exposition, couvert, essence dominante, densité, distances lisière, cours d'eau et accès, plus la décomposition du score (explication par critère).
 - **Meilleurs secteurs visibles** classés, espacés d'au moins 900 m pour proposer des points de départ distincts.
 - **Fonds de carte** plan, topographique et satellite.
 
@@ -19,7 +19,7 @@ Modèle **par règles expertes**, volontairement transparent plutôt qu'une boî
 
 | Critère | Poids | Ce qui est évalué |
 |---|---|---|
-| Météo récente | 16 % | Pluie déclenchante, phénologie, température, humidité |
+| Météo récente | 16 % | Phénologie de pousse, apport en eau (épisode + accumulation), température, humidité |
 | Couvert forestier | 14 % | Essence dominante / feu feuillus–conifères–mixte |
 | Saison | 13 % | Fenêtres de cueillette |
 | Altitude | 13 % | Tranche altitudinale |
@@ -40,7 +40,7 @@ Découpage DDD, sans suffixe `Service` :
 backend/src/
 ├── Domain/              # Métier pur, sans dépendance framework
 │   ├── Geo/             # Coordinates, BoundingBox, Grid, GridWindow, SurveyArea
-│   ├── Terrain/         # TerrainProfile, ForestCover, HostTree, CanopyClosure, StandCode, Exposure + ports
+│   ├── Terrain/         # TerrainProfile, ForestCover, HostTree, CanopyClosure, StandCode, Exposure, AccessThreshold + ports
 │   ├── Weather/         # WeatherConditions, WeatherField + port
 │   ├── Mycology/        # Species, SuitabilityCalculator, Criterion, SeasonAssessment
 │   └── Cartography/     # MapLayer, LayerLegendFactory, LayerValueResolver
@@ -52,7 +52,7 @@ backend/src/
     ├── LandCover/       # BdForetLandCover (optionnel) + OverpassLandCover (OpenStreetMap)
     ├── Weather/         # OpenMeteoWeather
     ├── Persistence/     # DbalTerrainCellStore (SQLite)
-    ├── Raster/          # PolygonRasterizer, ChamferDistance, TerrainDerivatives
+    ├── Raster/          # PolygonRasterizer, ChamferDistance, TerrainDerivatives, PathNetworkAccess
     ├── Mycology/        # InMemorySpeciesCatalog
     ├── Http/Controller/ # MapController
     └── Console/         # PrecomputeCommand
@@ -69,7 +69,8 @@ La partie statique du modèle est calculée une fois et stockée en SQLite :
 3. Rasterisation des polygones forestiers (BD Forêt si présente, sinon OSM), clairières comprises, essence et densité empaquetées dans un `StandCode`
 4. Rasterisation de l'hydrographie
 5. Transformées de distance aux lisières et aux cours d'eau
-6. Écriture en base
+6. Accès : marche le long des chemins OSM depuis un parking (budget 1,5 km + 150 m d'approche)
+7. Écriture en base
 
 La météo reste dynamique : elle est récupérée et interpolée à la requête, avec un cache de deux heures.
 
@@ -175,7 +176,7 @@ couvert, utiles pour la densité du peuplement et les coupes récentes.
 - La densité de peuplement est un **proxy FO/FF** (pas de surface terrière en m²/ha). Piste : NDVI Sentinel-2.
 - La géologie Charm-50 donne un **substrat** (calcaire / siliceux / mixte), pas un pH de sol mesuré.
 - Les fenêtres de cueillette sont calées sur des moyennes régionales, pas sur la phénologie de l'année en cours.
-- La pression de cueillette et l'accessibilité réelle (propriété privée, réglementation locale) ne sont pas modélisées.
+- La pression de cueillette, la propriété privée et la réglementation locale ne sont pas modélisées. L'accès parking–chemin (1,5 km le long d'OSM) est un filtre d'affichage, pas un droit d'entrer.
 
 ## Calibrage avec vos spots
 

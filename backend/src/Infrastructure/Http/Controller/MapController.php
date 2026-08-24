@@ -100,7 +100,7 @@ final class MapController
 
         try {
             $viewport = $this->viewportFrom($request);
-            $layer = MapLayer::from($request->query->getString('layer', MapLayer::Potential->value));
+            $layer = MapLayer::fromQuery($request->query->getString('layer', MapLayer::Potential->value));
             $speciesId = $request->query->getString('species', 'cepe');
 
             if (!$this->speciesCatalog->has($speciesId)) {
@@ -120,6 +120,7 @@ final class MapController
             maxCells: $maxCells,
             date: $this->projectionDateFrom($request),
             scoringMode: $scoringMode,
+            accessibleOnly: $request->query->getBoolean('accessible', true),
         ));
 
         if ($view === null) {

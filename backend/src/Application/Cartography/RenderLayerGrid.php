@@ -15,6 +15,7 @@ use App\Domain\Mycology\ScoringMode;
 use App\Domain\Mycology\SpeciesCatalog;
 use App\Domain\Mycology\SuitabilityCalculator;
 use App\Domain\Mycology\SuitabilityLevel;
+use App\Domain\Terrain\AccessThreshold;
 use App\Domain\Terrain\TerrainCellStore;
 use App\Domain\Terrain\TerrainProfile;
 use App\Domain\Weather\WeatherSource;
@@ -64,8 +65,22 @@ final readonly class RenderLayerGrid
             $profile = $entry['profile'];
             $weather = $weatherField->at($profile->coordinates);
             $potential = $this->calculator->evaluate($species, $profile, $weather, $season, $mode);
+            $waterMillimetres = $query->layer === MapLayer::Weather
+                ? $this->calculator->waterSupplyMillimetres($weather)
+                : 0.0;
 
-            $value = $this->valueResolver->resolve($query->layer, $profile, $weather, $potential);
+            $value = $this->valueResolver->resolve($query->layer, $profile, $weather, $potential, $waterMillimetres);
+
+            if ($query->layer === MapLayer::Access && !AccessThreshold::isAccessible((int) $value)) {
+                continue;
+            }
+
+            $hideUnreachable = $query->accessibleOnly
+                && $query->layer === MapLayer::Potential
+                && !AccessThreshold::isAccessible($profile->accessDistanceMeters);
+            if ($hideUnreachable) {
+                continue;
+            }
 
             $localColumn = $window->localColumn($entry['column']);
             $localRow = $window->localRow($entry['row']);
@@ -112,7 +127,7 @@ final readonly class RenderLayerGrid
                 'hotspotThreshold' => SuitabilityLevel::HOTSPOT_THRESHOLD,
             ],
             sectors: $this->extractSectors($hot, $columns, $rows, $effectiveCellSize),
-            weather: FlushClock::decorate($weatherField->at($query->viewport->center()), $species)
+            weather: FlushClock::decorate($weatherField->at($query->viewport->center()), $species, $query->date)
                 + ['degraded' => $weatherField->degraded],
             species: [
                 'id' => $species->id,
@@ -130,6 +145,8 @@ final readonly class RenderLayerGrid
             ],
             scoringMode: $mode,
             asOfDate: $query->date->format('Y-m-d'),
+            sparseNulls: $query->layer === MapLayer::Access
+                || ($query->accessibleOnly && $query->layer === MapLayer::Potential),
         );
     }
 
@@ -191,12 +208,14 @@ final readonly class RenderLayerGrid
             $sumLng = 0.0;
             $minScore = $hot[$bestIndex]['score'];
             $maxScore = $minScore;
+            $minAccess = $hot[$bestIndex]['profile']->accessDistanceMeters;
             foreach ($members as $index) {
                 $score = $hot[$index]['score'];
                 $sumScore += $score;
                 $point = $hot[$index]['profile']->coordinates;
                 $sumLat += $point->latitude;
                 $sumLng += $point->longitude;
+                $minAccess = min($minAccess, $hot[$index]['profile']->accessDistanceMeters);
                 if ($score > $maxScore) {
                     $maxScore = $score;
                     $bestIndex = $index;
@@ -224,6 +243,7 @@ final readonly class RenderLayerGrid
                 'hostTreeCode' => $profile->hostTree->value,
                 'canopy' => $profile->canopy->shortLabel(),
                 'canopyCode' => $profile->canopy->value,
+                'accessMeters' => $minAccess,
             ];
         }
 

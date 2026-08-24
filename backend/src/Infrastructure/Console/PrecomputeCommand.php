@@ -59,7 +59,7 @@ final class PrecomputeCommand extends Command
         }
 
         $io->success(sprintf(
-            '%s mailles de %d m (%d × %d) en %.0f s — %d tuiles de relief, %d polygones forestiers, %d formations géologiques, %d éléments hydro',
+            '%s mailles de %d m (%d × %d) en %.0f s — %d tuiles de relief, %d polygones forestiers, %d formations géologiques, %d éléments hydro, %d voies d\'accès',
             number_format($report->cells, 0, ',', ' '),
             $report->cellSizeMeters,
             $report->columns,
@@ -69,6 +69,7 @@ final class PrecomputeCommand extends Command
             $report->forestPolygons,
             $report->geologyPolygons,
             $report->waterFeatures,
+            $report->accessWays,
         ));
 
         if (!$report->isComplete()) {

@@ -9,11 +9,14 @@ Notes de travail pour les agents (et les humains) qui interviennent sur ce dép�
 - **Frontend** : Vue 3 + Vite + Leaflet, TypeScript strict. Police unique : Inter.
 - **Vérification avant commit** : `cd frontend && npm run build` (inclut `vue-tsc`). Le backend n'a pas de suite de tests.
 - **Serveurs de dev** : `./dev.sh backend` (port 8765) et `./dev.sh frontend` (port 43123).
+- **AGENTS.md** : à tenir à jour après chaque changement de modèle, de source, de grille, de
+  libellé métier ou de sémantique UI (poids, délais, accès, ce que l'interface montre).
 
 ## Modèle de score : pondérations et sources
 
-Le score est une somme pondérée de huit critères (`backend/src/Domain/Mycology/Criterion.php`),
-suivie de plafonds (`SuitabilityCalculator::applyCaps`).
+Le score est une somme pondérée de **dix** critères (`backend/src/Domain/Mycology/Criterion.php`),
+suivie de plafonds (`SuitabilityCalculator::applyCaps`). L'accès parking–chemin n'est **pas**
+un critère : c'est un filtre / masque (voir ci-dessous).
 
 ### Re-challenge obligatoire des poids
 
@@ -69,7 +72,9 @@ de la plage (`LayerLegendFactory`).
 ### Table des pondérations
 
 La table d'audit ci-dessus fait office de référence. Les valeurs dans le code
-(`Criterion::weight()`) doivent rester alignées avec elle.### Paramètres météo et phénologie
+(`Criterion::weight()`) doivent rester alignées avec elle.
+
+### Paramètres météo et phénologie
 
 | Paramètre du code | Valeur | Source |
 |---|---|---|
@@ -78,6 +83,10 @@ La table d'audit ci-dessus fait office de référence. Les valeurs dans le code
 | Délai de pousse girolle | min 5 / pic 8 / max 13 j | Espèces à réaction rapide aux orages d'été (savoir de terrain) |
 | Seuil d'épisode déclenchant | ≥ 15 mm cumulés, jour pivot ≥ 10 mm | Calibration interne, pas de source directe |
 | Fenêtre déclenchante | J−14 → J−5 | **Plus courte que la littérature** : décalage d'un mois pour la pluie ([Karavani et al. 2018](https://www.medfor.eu/sites/default/files/editor/karavani_et_al_final.pdf)), accumulation sur 26 j ([étude 2025](https://doi.org/10.64898/2025.12.12.693895)), température minimale deux semaines plus tôt ([Martínez-Peña 2004](https://oa.upm.es/48556/1/Martinez_2004_CuadSECF.pdf)) |
+
+**Libellés UI.** `FlushClock::label` / `explain` convertissent les délais (jours **après l'orage**)
+en dates calendaires (`pic vers le 25 août`), à partir du jour de projection `asOf`.
+Ne pas les confondre avec le **J+n de la barre du haut** (jours à partir d'aujourd'hui).
 
 ## Divergences avec la littérature
 
@@ -118,11 +127,11 @@ sur `DESCR` → `Substrate` (calcaire, siliceux, marneux/mixte, indéterminé). 
 
 ## Précision du couvert forestier
 
-Le couvert pèse 17 % du score — parmi les plus lourds critères d'habitat — sa qualité
+Le couvert pèse **14 %** du score — parmi les plus lourds critères d'habitat — sa qualité
 plafonne donc celle du modèle entier.
 
 **Grille à 50 m** (`app.area.cell_size`). C'est le plafond utile face à BD Forêt (≥ 0,5 ha).
-Le même pas affine pente, exposition, courbure, distances lisière / eau et donc le score.
+Le même pas affine pente, exposition, courbure, distances lisière / eau / accès et donc le score.
 Une archive 100 m n'est plus compatible : rejouer `./dev.sh precompute` puis `export-data`.
 
 **Deux sources, choisies à l'exécution.** `BdForetLandCover` est l'implémentation câblée sur le
@@ -186,6 +195,24 @@ non renseignée.
 
 **Corine Land Cover est à écarter** : sa résolution est trop grossière pour la grille de 50 m.
 
+## Accès (parking + chemin)
+
+Pas un poids du score : filtre d'affichage et masque `access`. Colonne SQLite `access_distance`.
+
+Marche **le long du réseau OSM** depuis une voie parkable, puis **150 m d'approche** dans le
+peuplement (pente > 40° bloquée sur l'approche seulement). Vol d'oiseau interdit : une crête
+sans sentier reste hors d'atteinte (`AccessThreshold::UNREACHABLE` = 9999).
+
+| Constante | Valeur |
+|---|---|
+| `AccessThreshold::ALONG_PATH_METERS` | 1 500 m |
+| `AccessThreshold::APPROACH_METERS` | 150 m |
+| `AccessThreshold::CLIFF_DEGREES` | 40° (approche) |
+
+Sources OSM : `OsmWayAccess` / Overpass (parkings, pistes, sentiers). L'interrupteur
+« Masquer les zones peu accessibles » masque les mailles hors budget sur le masque potentiel.
+La propriété privée et la réglementation locale **ne sont pas** modélisées.
+
 ## Plafonds du score
 
 `SuitabilityCalculator::applyCaps` empêche l'habitat seul de faire dire n'importe quoi :
@@ -204,8 +231,9 @@ deux jours après l'orage déclenchant, avant toute fructification possible.
 
 1. **Re-challenger d'abord** (section ci-dessus) : littérature + emprise / spots d'intérêt.
 2. Les poids sont dans `Criterion::weight()`. **Leur somme doit valoir 1,0.**
-3. `Criterion::rationale()` est affiché dans l'interface sous chaque critère : si un poids
-   change, l'explication doit rester vraie.
+3. L'interface n'affiche plus `rationale()` (notice du modèle) : seulement `explanation`
+   (ce que *ce point* dit). `rationale()` reste la notice mainteneur ; si un poids change,
+   elle doit rester vraie ici et dans la table d'audit.
 4. Mettre à jour la table d'audit dans ce fichier (colonnes poids + verdict).
 5. Les profils par espèce (tranches d'altitude, bandes de pente, affinités de couvert, d'essence
    et de densité, délais de pousse) sont dans `InMemorySpeciesCatalog.php`.

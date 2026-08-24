@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Terrain;
 
 use App\Domain\Geo\Coordinates;
+use App\Domain\Terrain\AccessThreshold;
 
 /**
  * Everything the precomputation knows about one grid cell, independent of species
@@ -24,6 +25,7 @@ final readonly class TerrainProfile
         public HostTree $hostTree = HostTree::Unknown,
         public CanopyClosure $canopy = CanopyClosure::Unknown,
         public Substrate $substrate = Substrate::Unknown,
+        public int $accessDistanceMeters = AccessThreshold::UNREACHABLE,
     ) {
     }
 

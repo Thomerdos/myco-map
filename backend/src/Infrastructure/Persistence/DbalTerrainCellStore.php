@@ -8,6 +8,7 @@ use App\Domain\Geo\BoundingBox;
 use App\Domain\Geo\Coordinates;
 use App\Domain\Geo\Grid;
 use App\Domain\Geo\GridWindow;
+use App\Domain\Terrain\AccessThreshold;
 use App\Domain\Terrain\StandCode;
 use App\Domain\Terrain\Substrate;
 use App\Domain\Terrain\TerrainCellStore;
@@ -19,6 +20,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
     private const INSERT_CHUNK = 500;
 
     private ?Grid $cachedGrid = null;
+    private ?bool $hasAccessColumn = null;
 
     public function __construct(private readonly Connection $connection)
     {
@@ -46,6 +48,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
                 edge_distance INTEGER NOT NULL,
                 water_distance INTEGER NOT NULL,
                 geology INTEGER NOT NULL DEFAULT 0,
+                access_distance INTEGER NOT NULL DEFAULT 9999,
                 PRIMARY KEY (row_index, column_index)
             ) WITHOUT ROWID
             SQL);
@@ -92,6 +95,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
                     $profile->edgeDistanceMeters,
                     $profile->waterDistanceMeters,
                     $profile->substrate->value,
+                    $profile->accessDistanceMeters,
                 ];
 
                 if (\count($buffer) >= self::INSERT_CHUNK) {
@@ -131,6 +135,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
         }
 
         $this->cachedGrid = null;
+        $this->hasAccessColumn = true;
 
         return $written;
     }
@@ -174,7 +179,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
     public function readWindow(GridWindow $window): iterable
     {
         $sql = 'SELECT column_index, row_index, latitude, longitude, elevation, slope, aspect, curvature,
-                       cover, edge_distance, water_distance, geology
+                       cover, edge_distance, water_distance, geology'.$this->accessSelect().'
                 FROM terrain_cell
                 WHERE row_index BETWEEN :firstRow AND :lastRow
                   AND column_index BETWEEN :firstColumn AND :lastColumn';
@@ -207,7 +212,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
     {
         $row = $this->connection->fetchAssociative(
             'SELECT column_index, row_index, latitude, longitude, elevation, slope, aspect, curvature,
-                    cover, edge_distance, water_distance, geology
+                    cover, edge_distance, water_distance, geology'.$this->accessSelect().'
              FROM terrain_cell
              WHERE latitude BETWEEN :latMin AND :latMax
                AND longitude BETWEEN :lngMin AND :lngMax
@@ -230,7 +235,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
     /** @param list<array<int, float|int>> $buffer */
     private function flush(array $buffer): void
     {
-        $placeholders = implode(',', array_fill(0, \count($buffer), '(?,?,?,?,?,?,?,?,?,?,?,?)'));
+        $placeholders = implode(',', array_fill(0, \count($buffer), '(?,?,?,?,?,?,?,?,?,?,?,?,?)'));
         $parameters = [];
 
         foreach ($buffer as $values) {
@@ -241,7 +246,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
 
         $this->connection->executeStatement(
             'INSERT OR REPLACE INTO terrain_cell
-             (row_index, column_index, latitude, longitude, elevation, slope, aspect, curvature, cover, edge_distance, water_distance, geology)
+             (row_index, column_index, latitude, longitude, elevation, slope, aspect, curvature, cover, edge_distance, water_distance, geology, access_distance)
              VALUES ' . $placeholders,
             $parameters,
         );
@@ -264,6 +269,28 @@ final class DbalTerrainCellStore implements TerrainCellStore
             hostTree: StandCode::host($packed),
             canopy: StandCode::canopy($packed),
             substrate: Substrate::tryFrom((int) ($row['geology'] ?? 0)) ?? Substrate::Unknown,
+            accessDistanceMeters: (int) ($row['access_distance'] ?? AccessThreshold::UNREACHABLE),
         );
+    }
+
+    private function accessSelect(): string
+    {
+        return $this->hasAccessColumn() ? ', access_distance' : '';
+    }
+
+    private function hasAccessColumn(): bool
+    {
+        if ($this->hasAccessColumn !== null) {
+            return $this->hasAccessColumn;
+        }
+
+        try {
+            $names = $this->connection->fetchFirstColumn("SELECT name FROM pragma_table_info('terrain_cell')");
+            $this->hasAccessColumn = \in_array('access_distance', $names, true);
+        } catch (\Throwable) {
+            $this->hasAccessColumn = false;
+        }
+
+        return $this->hasAccessColumn;
     }
 }

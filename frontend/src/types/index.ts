@@ -124,6 +124,7 @@ export interface Sector {
   hostTreeCode: number
   canopy: string
   canopyCode: number
+  accessMeters?: number
 }
 
 export interface LayerGrid {
@@ -145,6 +146,7 @@ export interface LayerGrid {
     hotspotThreshold?: number
   }
   sectors: Sector[]
+  sparseNulls?: boolean
   weather: Weather
   species: {
     id: string
@@ -185,6 +187,7 @@ export interface LocationReport {
     canopyCode: number
     edgeDistance: number
     waterDistance: number
+    accessDistance?: number
     moisture: number
     geology: string
     geologyCode: number

@@ -15,6 +15,7 @@
 | | Un précalcul avec BD Forêt V2 (voir le README principal) remplit les bits d'essence et de densité, beaucoup plus fiables que le seul repli OSM. |
 | `edge_distance` | Distance signée à la lisière, positive dans le boisement |
 | `water_distance` | Distance au cours d'eau le plus proche |
+| `access_distance` | Marche le long des chemins OSM depuis un parking / piste carrossable (budget 1,5 km), plus 150 m d'approche. 9999 = hors d'atteinte |
 | `grid_definition` | Emprise, taille de maille, dimensions, date de calcul |
 
 Emprise : 44,72–45,45 N et 5,38–6,30 E. Grille de **1 446 × 1 625** mailles de **50 m**.

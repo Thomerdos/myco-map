@@ -90,7 +90,7 @@ final readonly class SuitabilityCalculator
             $parts[] = new CriterionScore(
                 Criterion::Weather,
                 $this->weatherValue($species, $weather),
-                $this->explainWeather($species, $weather),
+                $this->explainWeather($species, $weather, $season->date),
                 $mode->weight(Criterion::Weather),
             );
         }
@@ -177,6 +177,17 @@ final readonly class SuitabilityCalculator
     }
 
     /**
+     * Same millimetres that feed waterSupply(): triggering spell (65 %) plus
+     * four-week accumulation (35 %). Kept continuous so orographic contrast
+     * stays visible on the diagnostic mask.
+     */
+    public function waterSupplyMillimetres(WeatherConditions $weather): float
+    {
+        return $this->soakingMillimetres($weather) * 0.65
+            + $this->accumulationMillimetres($weather) * 0.35;
+    }
+
+    /**
      * Weather score is dominated by flush phenology: a soaking rain is necessary but
      * fruitbodies lag behind it. Temperature, air humidity and measured soil moisture
      * only modulate once the clock since that rain is in the species' fruiting window.
@@ -232,9 +243,19 @@ final readonly class SuitabilityCalculator
         return min(100.0, $supply);
     }
 
+    private function soakingMillimetres(WeatherConditions $weather): float
+    {
+        return max($weather->soakingRainMillimetres, $weather->triggerRainMillimetres);
+    }
+
+    private function accumulationMillimetres(WeatherConditions $weather): float
+    {
+        return max($weather->accumulatedRainMillimetres, $weather->fortnightRainMillimetres);
+    }
+
     private function soakingStrength(WeatherConditions $weather): float
     {
-        $mm = max($weather->soakingRainMillimetres, $weather->triggerRainMillimetres);
+        $mm = $this->soakingMillimetres($weather);
 
         return match (true) {
             $mm >= 45 => 100.0,
@@ -249,9 +270,7 @@ final readonly class SuitabilityCalculator
     /** Fruiting increases roughly linearly with rain accumulated over about four weeks. */
     private function accumulationStrength(WeatherConditions $weather): float
     {
-        $mm = max($weather->accumulatedRainMillimetres, $weather->fortnightRainMillimetres);
-
-        return min(100.0, $mm / 80.0 * 100.0);
+        return min(100.0, $this->accumulationMillimetres($weather) / 80.0 * 100.0);
     }
 
     /**
@@ -272,9 +291,9 @@ final readonly class SuitabilityCalculator
         };
     }
 
-    private function explainWeather(Species $species, WeatherConditions $weather): string
+    private function explainWeather(Species $species, WeatherConditions $weather, \DateTimeImmutable $asOf): string
     {
-        return FlushClock::explain($species, $weather);
+        return FlushClock::explain($species, $weather, $asOf);
     }
 
     private function altitudeValue(Species $species, TerrainProfile $terrain): float

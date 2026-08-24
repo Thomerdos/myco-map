@@ -28,6 +28,7 @@ export function fetchLayer(params: {
   maxCells: number
   mode?: 'moment' | 'habitat'
   date?: string
+  accessible?: boolean
 }): Promise<LayerGrid> {
   return get<LayerGrid>('/layer', {
     layer: params.layer,
@@ -35,6 +36,7 @@ export function fetchLayer(params: {
     maxCells: params.maxCells,
     mode: params.mode ?? 'moment',
     ...(params.date ? { date: params.date } : {}),
+    accessible: params.accessible === false ? 0 : 1,
     south: params.bounds.south,
     west: params.bounds.west,
     north: params.bounds.north,

@@ -66,6 +66,15 @@ final readonly class PolygonRasterizer
 
     /**
      * @param \SplFixedArray<int> $raster
+     * @param array{0: float, 1: float} $point lat/lng
+     */
+    public function stampPoint(\SplFixedArray $raster, Grid $grid, array $point, int $value): void
+    {
+        $this->plot($raster, $grid, $grid->columnFor($point[1]), $grid->rowFor($point[0]), $value);
+    }
+
+    /**
+     * @param \SplFixedArray<int> $raster
      * @param list<array{0: float, 1: float}> $points
      */
     public function stampPolyline(\SplFixedArray $raster, Grid $grid, array $points, int $value): void
