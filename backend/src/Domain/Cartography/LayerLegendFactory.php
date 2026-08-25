@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Cartography;
 
 use App\Domain\Terrain\ForestCover;
-use App\Domain\Terrain\Substrate;
 use App\Domain\Mycology\ScoringMode;
 
 final readonly class LayerLegendFactory
@@ -52,11 +51,12 @@ final readonly class LayerLegendFactory
                 ['value' => 80, 'label' => 'Fermé', 'color' => '#2e7d4f'],
                 ['value' => 100, 'label' => '100 %', 'color' => '#123524'],
             ]),
-            MapLayer::Geology => new LayerLegend($layer->label(), null, true, [
-                ['value' => Substrate::Unknown->value, 'label' => Substrate::Unknown->label(), 'color' => '#c8c2b4'],
-                ['value' => Substrate::Calcareous->value, 'label' => Substrate::Calcareous->label(), 'color' => '#d4c48a'],
-                ['value' => Substrate::Siliceous->value, 'label' => Substrate::Siliceous->label(), 'color' => '#8b5a3c'],
-                ['value' => Substrate::Mixed->value, 'label' => Substrate::Mixed->label(), 'color' => '#6a7a8a'],
+            MapLayer::Geology => new LayerLegend($layer->label(), 'pH', false, [
+                ['value' => 4.5, 'label' => 'Acide', 'color' => '#8b5a3c'],
+                ['value' => 5.5, 'label' => '5,5', 'color' => '#c4a35a'],
+                ['value' => 6.5, 'label' => 'Neutre', 'color' => '#e8e4d9'],
+                ['value' => 7.5, 'label' => 'Basique', 'color' => '#d4c48a'],
+                ['value' => 8.2, 'label' => 'Calcaire', 'color' => '#f0e6b8'],
             ]),
             MapLayer::Moisture => new LayerLegend($layer->label(), null, false, [
                 ['value' => 0, 'label' => 'Drainant', 'color' => '#d8c9a3'],

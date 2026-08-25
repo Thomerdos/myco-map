@@ -59,7 +59,7 @@ final class PrecomputeCommand extends Command
         }
 
         $io->success(sprintf(
-            '%s mailles de %d m (%d × %d) en %.0f s — %d tuiles de relief, %d polygones forestiers, %d formations géologiques, %d éléments hydro, %d voies d\'accès, %d mailles TCD',
+            '%s mailles de %d m (%d × %d) en %.0f s — %d tuiles de relief, %d polygones forestiers, %d formations géologiques, %d éléments hydro, %d voies d\'accès, %d mailles TCD, %d mailles pH',
             number_format($report->cells, 0, ',', ' '),
             $report->cellSizeMeters,
             $report->columns,
@@ -71,12 +71,20 @@ final class PrecomputeCommand extends Command
             $report->waterFeatures,
             $report->accessWays,
             $report->canopyCoverCells,
+            $report->soilPhCells,
         ));
 
         if ($report->canopyCoverCells === 0) {
             $io->note(
                 'TCD Copernicus absent : densité en repli FO/FF. Téléchargez les tuiles avec '
                 .'./dev.sh tcd (compte Copernicus Data Space) puis relancez le précalcul.'
+            );
+        }
+
+        if ($report->soilPhCells === 0) {
+            $io->note(
+                'pH EcoDataCube absent : critère pH en repli Charm-50. Lancez ./dev.sh soilph '
+                .'puis relancez le précalcul.'
             );
         }
 
