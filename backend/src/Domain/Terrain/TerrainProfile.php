@@ -27,6 +27,8 @@ final readonly class TerrainProfile
         public Substrate $substrate = Substrate::Unknown,
         public int $accessDistanceMeters = AccessThreshold::UNREACHABLE,
         public ?int $canopyCoverPercent = null,
+        /** Soil pH in water (EcoDataCube); null when the raster is missing. */
+        public ?float $soilPh = null,
     ) {
     }
 

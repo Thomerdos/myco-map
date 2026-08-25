@@ -31,7 +31,7 @@ enum MapLayer: string
             self::Slope => 'Pente',
             self::Cover => 'Couvert forestier',
             self::StandDensity => 'Densité du peuplement',
-            self::Geology => 'Géologie / substrat',
+            self::Geology => 'pH / substrat',
             self::Moisture => 'Humidité topographique',
             self::ForestEdge => 'Distance à la lisière',
             self::Weather => 'Apport en eau',
@@ -59,7 +59,7 @@ enum MapLayer: string
     public function isCategorical(): bool
     {
         return match ($this) {
-            self::Cover, self::Geology => true,
+            self::Cover => true,
             default => false,
         };
     }
@@ -71,6 +71,7 @@ enum MapLayer: string
             self::Slope => '°',
             self::StandDensity => '%',
             self::Weather => 'mm',
+            self::Geology => 'pH',
             default => null,
         };
     }

@@ -8,8 +8,8 @@ Notes de travail pour les agents (et les humains) qui interviennent sur ce dép�
 - **Backend** : Symfony 7 / PHP 8.4, domaine sans dépendance à l'infrastructure (`backend/src/Domain`), adaptateurs dans `backend/src/Infrastructure`.
 - **Frontend** : Vue 3 + Vite + Leaflet, TypeScript strict. Police unique : Inter.
 - **Installation** : Docker Compose uniquement (PHP 8.4, Node, et les scripts
-  `bdforet` / `geologie` / `tcd` / `precompute` via images Docker). Rien à installer
-  sur l'hôte hors Docker.
+  `bdforet` / `geologie` / `tcd` / `soilph` / `precompute` via images Docker). Rien à
+  installer sur l'hôte hors Docker.
 - **Emprise** : `app.area.*` dans `backend/config/services.yaml` (Grenoble par défaut). Toute
   autre région : mêmes clés + recopier les bornes dans `scripts/fetch_tcd.py`, **ne pas**
   restaurer l'archive grenobloise, télécharger BD Forêt / Charm-50 / TCD de *cette* emprise,
@@ -61,7 +61,7 @@ meilleure que ~5 points sur un poids n'a pas de sens.
 | Couvert forestier | 14 % | Hôte ectomycorhizien = premier contributeur MaxEnt | Bien appuyé ; densité sortie en critère séparé |
 | Altitude | 13 % | Facteur de site significatif ([Bonet et al. 2010](https://hal.science/hal-00884160v1/document)) | Bien appuyé |
 | Exposition | 13 % | Versants nord > sud ([Bonet et al. 2010](https://hal.science/hal-00884160v1/document)) | Bien appuyé |
-| **Géologie / substrat** | **10 %** | Trompette / morille calcaire ; girolle plutôt acide (savoir + fiches d'espèce) | Discriminant local Chartreuse–Belledonne ; pas un pH mesuré |
+| **Géologie / substrat** | **10 %** | pH EcoDataCube (prior) ; Charm-50 en repli. Trompette / morille basiques ; girolle acide | Continu 30 m → 50 m ; Charm-50 encore utile hors raster |
 | Humidité topographique | 9 % | Humidité du sol télédétectée (r = 0,63–0,72, [Hernández-Rodríguez et al. 2020](https://doi.org/10.1016/j.agrformet.2020.108020)) | Défendable |
 | Position lisière | 7 % | −65 % de richesse en lisière ([Rianhard et al. 2025](https://doi.org/10.1002/ppp3.70008)) | Sens correct ; poids relevé (sous-représentée à 4 %) |
 | Pente | 2 % | Effet négatif monotone ([Bonet et al. 2010](https://hal.science/hal-00884160v1/document)) | Poids plausible |
@@ -140,17 +140,29 @@ Ne pas les confondre avec le **J+n de la barre du haut** (jours à partir d'aujo
    TCD (0–100 %) quand le raster est là, sinon FO/FF. Ce n'est pas des m²/ha mesurés.
    Piste suivante : LIDAR HD IGN (hauteur de canopée). Le NDVI Sentinel-2 sature dans les
    hêtraies/pessières fermées — ne pas en faire la source nominale.
-2. **pH réel absent.** La géologie Charm-50 donne un substrat calcaire / siliceux / mixte, pas
-   un pH de sol.
+2. **pH modélisé, pas mesuré densément.** EcoDataCube (AI4SoilHealth) fournit un pH H₂O
+   30 m (R² ≈ 0,6) ; Charm-50 reste le repli catégoriel. Ce n'est toujours pas un réseau
+   de mesures densément réparties en forêt alpine.
 3. **Délais de pousse par espèce non sourcés en revue à comité de lecture.** Voir la note en fin
    de fichier.
+
+## pH du sol (EcoDataCube / AI4SoilHealth)
+
+Source nominale du critère « pH / substrat » (10 %) : prédiction pan-européenne
+`ph.h2o_iso.10390.2021.index` (moyenne 0–20 cm, Byte × 0.1), via STAC
+`https://s3.ecodatacube.eu/arco/stac/…`. `./dev.sh soilph` écrit
+`backend/var/soilph/soil-ph.{bin,json}` (grille 50 m). Colonne SQLite `soil_ph` (REAL, NULL
+si inconnu). Repli : affinités Charm-50 (`geology` entier). Masque carte continu (légende pH).
+
+Licence CC-BY. Pas de compte requis (contrairement au TCD Copernicus).
 
 ## Géologie (BRGM Charm-50)
 
 Source : formations `*_S_FGEOL_2154` des départements 26 / 38 / 73, converties via
 `./dev.sh geologie` vers `backend/var/geologie/formations.geojsonl`. Classification par mots-clés
 sur `DESCR` → `Substrate` (calcaire, siliceux, marneux/mixte, indéterminé). Colonne SQLite
-`geology`. Masque « Géologie / substrat ».
+`geology`. **Repli** du critère pH quand EcoDataCube est absent ; toujours stocké pour
+l'inspection / le proxy de légende.
 
 ## Densité du peuplement (Copernicus TCD)
 
