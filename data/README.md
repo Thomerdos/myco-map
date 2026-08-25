@@ -27,18 +27,6 @@ Emprise : 44,72–45,45 N et 5,38–6,30 E. Grille de **1 446 × 1 625** mailles
 
 La météo n'est **pas** stockée : elle est récupérée et interpolée à chaque requête, avec un cache de deux heures.
 
-## Migration depuis 100 m
-
-La configuration (`app.area.cell_size`) est passée à 50 m. L'archive `myco-terrain-100m.sqlite.gz` **n'est plus compatible** : il faut régénérer la base.
-
-```bash
-./dev.sh precompute      # + BD Forêt si disponible (./dev.sh bdforet)
-                         # + TCD Copernicus si disponible (./dev.sh tcd)
-./dev.sh export-data     # publie data/myco-terrain-50m.sqlite.gz
-```
-
-Sans ce re-précalcul, l'API répondra que les données ne sont pas prêtes (ou restera sur une ancienne base 100 m incohérente avec la config).
-
 ## Restauration
 
 `./dev.sh restore-data` décompresse l'archive (le premier `docker compose up` le fait
@@ -74,7 +62,8 @@ gzip -c backend/var/data/myco.sqlite > data/myco-terrain-50m.sqlite.gz
 sha256sum data/myco-terrain-50m.sqlite.gz
 ```
 
-Comptez davantage de temps qu'à 100 m (~4× de mailles) : tuiles de relief et requêtes Overpass / BD Forêt, mises en cache dans `backend/var/`.
+Comptez plusieurs minutes (tuiles de relief, Overpass / BD Forêt) : les caches restent dans
+`backend/var/`.
 
 ## Licence
 
