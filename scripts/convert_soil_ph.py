@@ -15,7 +15,6 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any
-from urllib.request import urlopen
 
 # services.yaml app.area.*
 SOUTH, WEST, NORTH, EAST = 44.72, 5.38, 45.45, 6.30
