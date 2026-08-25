@@ -43,8 +43,13 @@ docker compose up --build
 
 Au premier démarrage le backend :
 
-1. crée `backend/.env` si besoin ;
-2. installe les dépendances Composer ;
+1. copie `backend/.env.example` vers `backend/.env` s'il n'existe pas encore — valeurs
+   locales prêtes à l'emploi (`APP_ENV=dev`, SQLite sous `var/data/myco.sqlite`, CORS
+   limité à localhost / 127.0.0.1). **Rien à remplir** pour un usage local ; ne changez
+   `APP_SECRET` que si vous exposez l'API hors de la machine. Les identifiants Copernicus
+   (`CDSE_*`) ne vont pas dans ce fichier : ce sont des variables d'environnement shell
+   pour `./dev.sh tcd` ;
+2. installe les dépendances Composer (`vendor/`) si besoin ;
 3. décompresse `data/myco-terrain-50m.sqlite.gz` vers `backend/var/data/myco.sqlite`
    s'il n'y a pas encore de base locale.
 
@@ -57,24 +62,46 @@ Le code est monté en volume : une modification PHP ou Vue est prise en compte s
 | Carte | [http://127.0.0.1:43123](http://127.0.0.1:43123) |
 | API | [http://127.0.0.1:8765](http://127.0.0.1:8765) |
 
-À ce stade l'application fonctionne avec la base fournie (couvert OSM, sans géologie ni
-TCD Copernicus). Les étapes suivantes sont optionnelles mais améliorent nettement le modèle.
+À ce stade l'application fonctionne déjà : vous pouvez ouvrir la carte, choisir une
+espèce, zoomer et cliquer. La base livrée s'appuie surtout sur OpenStreetMap pour le
+bois. Les étapes ci-dessous **ne sont pas obligatoires** pour tester, mais elles
+améliorent nettement le score (essences, calcaire / acide, densité réelle du peuplement).
 
 ### 4. Couches optionnelles (recommandé)
 
-Relief, OSM et météo sont récupérés automatiquement au précalcul. BD Forêt, Charm-50 et
-TCD se téléchargent à la main ; les fichiers bruts vont dans `backend/var/` et **ne se
-committent pas**. Sans eux : couvert OSM, densité FO/FF, substrat indéterminé.
+**De quoi s'agit-il ?** Au démarrage, Myco Map a déjà le relief et la météo. Trois jeux
+de données publics, téléchargeables à la main, affinent le reste :
 
-Pour Grenoble : **Isère (038)**, plus **Drôme (026)** et **Savoie (073)** pour les franges.
-Remplacez ces codes INSEE pour une autre emprise française.
+| Couche | À quoi ça sert | Sans elle |
+|---|---|---|
+| **BD Forêt** (IGN) | Savoir *quelle* forêt (hêtre, sapin, mixte…) | Essences souvent « indéterminées » (OSM) |
+| **Charm-50** (BRGM) | Calcaire vs siliceux (morille / trompette vs girolle) | Substrat indéterminé partout |
+| **TCD** (Copernicus) | Densité du peuplement en % de couvert | Estimation grossière ouverte / fermée |
 
-#### a. Couvert — BD Forêt V2 (France)
+Vous pouvez en installer **une seule**, deux, ou les trois. L'ordre n'importe pas. En
+revanche, après chaque ajout (ou une fois les trois faits), il faut **relancer le
+précalcul** (étape 5) : sinon la carte continue d'utiliser l'ancienne base.
 
-Page produit : [geoservices.ign.fr/bdforet](https://geoservices.ign.fr/bdforet)
-(Licence Ouverte 2.0). Prendre **version 2**, shapefile **Lambert-93**. Pour un autre
-département, lister
-`https://data.geopf.fr/telechargement/resource/BDFORET?zone=D0xx`.
+Les fichiers téléchargés restent sur votre disque dans `backend/var/` (souvent des
+centaines de Mo). Ils ne sont **pas** envoyés sur Git. Les commandes ci-dessous
+supposent que vous êtes à la racine du dépôt (`myco-map/`) dans un terminal, Docker
+déjà capable de tourner.
+
+Pour la zone grenobloise, on prend trois départements : **Isère (038)**, **Drôme (026)**
+et **Savoie (073)**. Si vous adaptez une autre région française, remplacez ces numéros
+par les codes départements qui recouvrent *votre* carte.
+
+#### a. Couvert forestier précis — BD Forêt V2 (France)
+
+Objectif : remplacer le couvert flou d'OpenStreetMap par la carte officielle des
+formations végétales de l'IGN (Licence Ouverte).
+
+1. Les trois archives ci-dessous correspondent à Isère, Drôme et Savoie (version 2,
+   projection Lambert-93). Vous pouvez aussi les télécharger à la souris depuis
+   [geoservices.ign.fr/bdforet](https://geoservices.ign.fr/bdforet) ; pour un autre
+   département, cherchez le fichier dans
+   `https://data.geopf.fr/telechargement/resource/BDFORET?zone=D0xx` (remplacez `0xx`).
+2. Dans le terminal, depuis la racine du projet :
 
 ```bash
 mkdir -p backend/var/bdforet
@@ -91,13 +118,16 @@ cd ../../..
   backend/var/bdforet/BDFORET_2-0__SHP_LAMB93_D073_2014-04-01.7z
 ```
 
-Écrit `backend/var/bdforet/formation-vegetale.geojsonl`. Autre chemin : `BDFORET_PATH`.
-L'hydrographie reste toujours OSM.
+3. La commande produit `backend/var/bdforet/formation-vegetale.geojsonl`. Tant que ce
+   fichier n'existe pas, Myco Map reste sur OpenStreetMap. Les rivières et sentiers
+   viennent toujours d'OSM, même avec BD Forêt.
 
-#### b. Géologie — Charm-50 (France)
+#### b. Géologie / substrat — Charm-50 (France)
 
-Formulaire : [Infoterre / Charm-50](https://infoterre.brgm.fr/formulaire/telechargement-cartes-geologiques-departementales-150-000-bd-charm-50).
-Archives directes (couche `*_S_FGEOL_2154`) :
+Objectif : indiquer si le sol est plutôt calcaire, siliceux ou mixte (utile pour
+discriminer morille / trompette et girolle). Données du BRGM.
+
+1. Créez le dossier, téléchargez un ZIP par département, puis convertissez :
 
 ```bash
 mkdir -p backend/var/geologie/source
@@ -111,43 +141,64 @@ curl -fL -o backend/var/geologie/source/GEO050K_HARM_073.zip \
 ./dev.sh geologie
 ```
 
-Écrit `backend/var/geologie/formations.geojsonl`. Autre chemin : `GEOLOGIE_PATH`.
+2. Vous pouvez aussi choisir le département sur le
+   [formulaire Infoterre](https://infoterre.brgm.fr/formulaire/telechargement-cartes-geologiques-departementales-150-000-bd-charm-50)
+   si le lien direct échoue.
+3. Résultat attendu : `backend/var/geologie/formations.geojsonl`. Sans ce fichier, le
+   critère géologie ne discrimine rien.
 
-#### c. Densité — Copernicus Tree Cover Density (Europe)
+#### c. Densité du peuplement — Copernicus Tree Cover Density (Europe)
 
-Compte gratuit : [dataspace.copernicus.eu](https://dataspace.copernicus.eu).
-Les bornes interrogées sont dans [`scripts/fetch_tcd.py`](scripts/fetch_tcd.py)
-(`SOUTH` / `WEST` / `NORTH` / `EAST`) — à tenir alignées avec `app.area.*` dans
-[`backend/config/services.yaml`](backend/config/services.yaml).
+Objectif : une valeur continue 0–100 % de couvert arboré (meilleure que « forêt ouverte /
+fermée »). Couvre toute l'Europe ; il faut un **compte gratuit**.
+
+1. Créez un compte sur [dataspace.copernicus.eu](https://dataspace.copernicus.eu)
+   (inscription, confirmation e-mail).
+2. Dans le **même** terminal où vous lancez la commande, exportez vos identifiants
+   (remplacez par les vôtres ; ils ne vont **pas** dans `backend/.env`) :
 
 ```bash
-export CDSE_USERNAME='…'
-export CDSE_PASSWORD='…'   # ou CDSE_REFRESH_TOKEN
-./dev.sh tcd               # dernière année ; TCD_YEAR=2023 pour figer
+export CDSE_USERNAME='votre.email@exemple.fr'
+export CDSE_PASSWORD='votre-mot-de-passe'
+# alternative : export CDSE_REFRESH_TOKEN='…'
 ```
 
-GeoTIFF déjà téléchargés : `./dev.sh tcd tuile.tif [tuile2.tif…]`.
-Écrit `backend/var/tcd/canopy-cover.bin` + `.json`. Autre chemin : `TCD_PATH`.
+3. Téléchargez et convertissez les tuiles qui couvrent l'emprise configurée :
+
+```bash
+./dev.sh tcd
+```
+
+Par défaut le script prend la dernière année disponible. Pour figer une année :
+`TCD_YEAR=2023 ./dev.sh tcd`. Si vous avez déjà des fichiers `.tif`, passez-les en
+arguments : `./dev.sh tcd chemin/vers/tuile.tif …`.
+
+4. Résultat attendu : `backend/var/tcd/canopy-cover.bin` et `.json`. Sans eux, Myco Map
+   estime la densité à partir de BD Forêt / OSM (ouvert / fermé seulement).
+
+Les bornes géographiques du téléchargement sont dans
+[`scripts/fetch_tcd.py`](scripts/fetch_tcd.py). Si vous changez la zone de la carte
+(section suivante), mettez-les à jour pour qu'elles correspondent.
 
 ### 5. Relancer le précalcul
 
-Après une ou plusieurs conversions :
+Quand au moins une des conversions ci-dessus a réussi, **reconstruisez la base** pour que
+la carte lise les nouvelles couches. Ce recalcul est **manuel** : rien ne se met à jour
+tout seul ensuite (voir [Données : précalcul vs à la volée](#données--précalcul-vs-à-la-volée)).
 
 ```bash
 ./dev.sh precompute
 ```
 
-(équivalent : `docker compose exec backend php bin/console app:precompute`)
+(équivalent si Docker tourne déjà :
+`docker compose exec backend php bin/console app:precompute`)
 
-Comptez plusieurs minutes la première fois. Les tuiles DEM et les réponses Overpass sont
-mises en cache dans `backend/var/` ; les relances suivantes sont plus rapides.
+La première fois peut prendre plusieurs minutes (téléchargement du relief, requêtes
+OpenStreetMap). Les fichiers intermédiaires restent en cache dans `backend/var/` :
+les relances suivantes sont plus rapides. Rechargez ensuite la page dans le navigateur.
 
-Pour republier l'archive livrée dans `data/` :
-
-```bash
-./dev.sh export-data
-```
-
+Vous n'avez en général **pas** besoin de `./dev.sh export-data` : cette commande ne sert
+qu'à republier l'archive `data/myco-terrain-50m.sqlite.gz` pour le dépôt Git.
 ## Adapter à une autre région
 
 Le clone restaure par défaut la base **grenobloise**. Pour une autre emprise :
@@ -217,10 +268,21 @@ avec badge En saison / Hors saison. L'ajustement altitudinal de l'exposition est
 au contexte montagnard : en bas les versants nord gardent l'humidité, plus haut les
 versants plus chauds prennent l'avantage.
 
-### Précalcul
+### Données : précalcul vs à la volée
 
-La partie statique est calculée une fois et stockée en SQLite (~2,3 M mailles à 50 m
-sur l'emprise grenobloise) :
+Deux rythmes distincts :
+
+| Donnée | Quand c'est chargé | Où ça vit |
+|---|---|---|
+| Relief (altitude, pente, exposition, courbure) | Au **précalcul** | SQLite `backend/var/data/myco.sqlite` |
+| Couvert forestier, essences, densités FO/FF | Au **précalcul** (BD Forêt ou OSM) | Idem |
+| Distances lisière / eau, réseau d'accès | Au **précalcul** (OSM) | Idem |
+| Géologie / substrat | Au **précalcul** (si Charm-50 converti) | Idem |
+| Densité continue 0–100 % | Au **précalcul** (si TCD converti) | Idem |
+| **Météo** (pluie, température, humidité du sol) | **À chaque requête** carte / clic | Cache ~2 h, pas dans la base |
+| Fonds de carte (plan, topo, satellite) | Navigateur, tuiles distantes | Jamais stockés par Myco Map |
+
+Le précalcul écrit une grille fixe (~2,3 M mailles à 50 m sur Grenoble). Étapes internes :
 
 1. Tuiles de relief (~13 m/pixel), échantillonnage bilinéaire
 2. Pente, exposition, courbure (Horn)
@@ -231,19 +293,25 @@ sur l'emprise grenobloise) :
 7. Taux de couvert Copernicus TCD si présent, sinon FO/FF
 8. Écriture en base
 
-La météo reste dynamique (cache deux heures). Contenu de l'archive : [`data/README.md`](data/README.md).
+**Pas de mise à jour automatique.** Aucun cron, webhook ou tâche planifiée ne recharge
+OpenStreetMap, le relief, BD Forêt, Charm-50 ou TCD. Tant que vous ne relancez pas
+`./dev.sh precompute` (et, le cas échéant, ne re-téléchargez / reconvertissez pas les
+couches optionnelles), la base reste celle du dernier calcul — y compris l'archive
+fournie dans `data/` au premier démarrage. Seule la météo se rafraîchit d'elle-même
+(sous réserve du cache de deux heures). Contenu détaillé de l'archive :
+[`data/README.md`](data/README.md).
 
 ### Sources
 
-| Source | Zone | Usage | Quand |
+| Source | Zone | Usage | Mode |
 |---|---|---|---|
-| [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) | Monde | Relief | Automatique |
-| [OpenStreetMap / Overpass](https://overpass-api.de/) | Monde | Couvert (repli), hydrographie, accès | Automatique |
-| [Open-Meteo](https://open-meteo.com/) | Monde | Pluie, température, humidité du sol | À la requête |
-| [IGN BD Forêt® V2](https://geoservices.ign.fr/bdforet) | France | Essence et densité | Manuel |
-| [BRGM Charm-50](https://infoterre.brgm.fr/formulaire/telechargement-cartes-geologiques-departementales-150-000-bd-charm-50) | France | Substrat | Manuel |
-| [Copernicus Tree Cover Density](https://land.copernicus.eu/en/products/high-resolution-layer-forests-and-tree-cover/tree-cover-density-2018-present-raster-10-m-europe-yearly) | Europe | Couvert 0–100 % | Manuel |
-| OpenTopoMap · OSM · Esri | Monde | Fonds de carte | Automatique |
+| [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) | Monde | Relief | Précalcul (téléchargé alors) |
+| [OpenStreetMap / Overpass](https://overpass-api.de/) | Monde | Couvert (repli), hydrographie, accès | Précalcul |
+| [Open-Meteo](https://open-meteo.com/) | Monde | Pluie, température, humidité du sol | À la volée |
+| [IGN BD Forêt® V2](https://geoservices.ign.fr/bdforet) | France | Essence et densité | Manuel puis précalcul |
+| [BRGM Charm-50](https://infoterre.brgm.fr/formulaire/telechargement-cartes-geologiques-departementales-150-000-bd-charm-50) | France | Substrat | Manuel puis précalcul |
+| [Copernicus Tree Cover Density](https://land.copernicus.eu/en/products/high-resolution-layer-forests-and-tree-cover/tree-cover-density-2018-present-raster-10-m-europe-yearly) | Europe | Couvert 0–100 % | Manuel puis précalcul |
+| OpenTopoMap · OSM · Esri | Monde | Fonds de carte | Navigateur |
 
 Licences et attributions : [`ATTRIBUTION.md`](ATTRIBUTION.md).
 
