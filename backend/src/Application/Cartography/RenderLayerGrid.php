@@ -70,6 +70,9 @@ final readonly class RenderLayerGrid
                 : 0.0;
 
             $value = $this->valueResolver->resolve($query->layer, $profile, $weather, $potential, $waterMillimetres);
+            if ($value === null) {
+                continue;
+            }
 
             if ($query->layer === MapLayer::Access && !AccessThreshold::isAccessible((int) $value)) {
                 continue;
@@ -136,6 +139,7 @@ final readonly class RenderLayerGrid
                 'summary' => $species->summary,
                 'hostTrees' => $species->hostTrees,
                 'inSeason' => $season->isInSeason(),
+                'seasonGate' => $season->gateMessage(),
                 'activeWindow' => $season->activeWindow?->toArray(),
                 'nextWindow' => $season->nextWindow?->toArray(),
                 'harvestWindows' => array_map(
@@ -146,6 +150,7 @@ final readonly class RenderLayerGrid
             scoringMode: $mode,
             asOfDate: $query->date->format('Y-m-d'),
             sparseNulls: $query->layer === MapLayer::Access
+                || $query->layer === MapLayer::StandDensity
                 || ($query->accessibleOnly && $query->layer === MapLayer::Potential),
         );
     }
@@ -243,6 +248,7 @@ final readonly class RenderLayerGrid
                 'hostTreeCode' => $profile->hostTree->value,
                 'canopy' => $profile->canopy->shortLabel(),
                 'canopyCode' => $profile->canopy->value,
+                'canopyCover' => $profile->canopyCoverPercent,
                 'accessMeters' => $minAccess,
             ];
         }

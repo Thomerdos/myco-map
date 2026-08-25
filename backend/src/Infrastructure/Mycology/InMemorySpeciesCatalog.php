@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Mycology;
 
 use App\Domain\Mycology\AltitudeBand;
+use App\Domain\Mycology\CanopyDensityBand;
 use App\Domain\Mycology\EdgeAffinity;
 use App\Domain\Mycology\HarvestWindow;
 use App\Domain\Mycology\SlopeBand;
@@ -98,6 +99,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     Substrate::Siliceous->value => 0.70,
                     Substrate::Unknown->value => 0.55,
                 ],
+                canopyDensity: new CanopyDensityBand(50, 70, 0.76, 0.22),
             ),
             new Species(
                 id: 'trompette',
@@ -143,6 +145,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     Substrate::Siliceous->value => 0.32,
                     Substrate::Unknown->value => 0.55,
                 ],
+                canopyDensity: new CanopyDensityBand(55, 80, 0.82, 0.18),
             ),
             new Species(
                 id: 'chanterelle',
@@ -189,6 +192,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     Substrate::Siliceous->value => 0.78,
                     Substrate::Unknown->value => 0.55,
                 ],
+                canopyDensity: new CanopyDensityBand(50, 70, 0.76, 0.22),
             ),
             new Species(
                 id: 'girolle',
@@ -234,6 +238,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     Substrate::Siliceous->value => 0.95,
                     Substrate::Unknown->value => 0.55,
                 ],
+                canopyDensity: new CanopyDensityBand(45, 65, 0.74, 0.24),
             ),
             new Species(
                 id: 'pied_mouton',
@@ -279,6 +284,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     Substrate::Siliceous->value => 0.82,
                     Substrate::Unknown->value => 0.55,
                 ],
+                canopyDensity: new CanopyDensityBand(50, 72, 0.76, 0.22),
             ),
             new Species(
                 id: 'morille',
@@ -330,6 +336,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                     Substrate::Siliceous->value => 0.38,
                     Substrate::Unknown->value => 0.55,
                 ],
+                canopyDensity: new CanopyDensityBand(18, 42, 0.50, 0.70),
             ),
         ];
     }

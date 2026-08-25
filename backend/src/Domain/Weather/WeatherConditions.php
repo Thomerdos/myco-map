@@ -22,6 +22,9 @@ final readonly class WeatherConditions
      * @param float $precedingDryMillimetres    rain over the fortnight *before* the trigger
      *                                          window, used to detect a drought broken by the
      *                                          spell — those events fruit best
+     * @param float $rainSinceSoakingMillimetres rain after the latest soaking spell ended (not
+     *                                          including the storm days themselves)
+     * @param float $litterSoilMoisture         volumetric 3–9 cm, more stable than 0–1 cm
      */
     public function __construct(
         public float $triggerRainMillimetres,
@@ -34,8 +37,10 @@ final readonly class WeatherConditions
         public float $soakingRainMillimetres = 0.0,
         public float $accumulatedRainMillimetres = 0.0,
         public float $precedingDryMillimetres = 0.0,
-        /** @var list<array{daysSince: int, millimetres: float}> */
+        /** @var list<array{daysSince: int, millimetres: float, rainAfter?: float, temperature?: float}> */
         public array $soakingEvents = [],
+        public float $rainSinceSoakingMillimetres = 0.0,
+        public float $litterSoilMoisture = 0.30,
     ) {
     }
 
@@ -43,7 +48,7 @@ final readonly class WeatherConditions
      * Every soaking spell still in the archive, newest first. Falls back to the single
      * last-event fields when a caller has not populated the list.
      *
-     * @return list<array{daysSince: int, millimetres: float}>
+     * @return list<array{daysSince: int, millimetres: float, rainAfter?: float, temperature?: float}>
      */
     public function soakingSpells(): array
     {
@@ -55,6 +60,7 @@ final readonly class WeatherConditions
             return [[
                 'daysSince' => $this->daysSinceSoakingRain,
                 'millimetres' => $this->soakingRainMillimetres,
+                'rainAfter' => $this->rainSinceSoakingMillimetres,
             ]];
         }
 
@@ -68,6 +74,21 @@ final readonly class WeatherConditions
     public function brokeDrySpell(): bool
     {
         return $this->precedingDryMillimetres < 10.0 && $this->soakingRainMillimetres >= 20.0;
+    }
+
+    /**
+     * Little follow-up rain after a spell and a dry 3–9 cm profile: primordia abort.
+     * Opposite of {@see brokeDrySpell()}.
+     */
+    public function driedOutAfterSoaking(?float $rainAfterMillimetres = null): bool
+    {
+        if ($this->daysSinceSoakingRain === null || $this->soakingRainMillimetres < 15.0) {
+            return false;
+        }
+
+        $rainAfter = $rainAfterMillimetres ?? $this->rainSinceSoakingMillimetres;
+
+        return $rainAfter < 8.0 && $this->litterSoilMoisture < 0.18;
     }
 
     public function label(): string
@@ -98,12 +119,16 @@ final readonly class WeatherConditions
             'daysSinceSoakingRain' => $this->daysSinceSoakingRain,
             'soakingRain' => round($this->soakingRainMillimetres, 1),
             'accumulatedRain' => round($this->accumulatedRainMillimetres, 1),
+            'rainSinceSoaking' => round($this->rainSinceSoakingMillimetres, 1),
+            'litterSoilMoisture' => round($this->litterSoilMoisture, 3),
             'brokeDrySpell' => $this->brokeDrySpell(),
+            'driedOutAfterSoaking' => $this->driedOutAfterSoaking(),
             'label' => $this->label(),
             'soakingEvents' => array_map(
                 static fn (array $spell): array => [
                     'daysSince' => $spell['daysSince'],
                     'millimetres' => round($spell['millimetres'], 1),
+                    'rainAfter' => round((float) ($spell['rainAfter'] ?? 0.0), 1),
                 ],
                 $this->soakingSpells(),
             ),

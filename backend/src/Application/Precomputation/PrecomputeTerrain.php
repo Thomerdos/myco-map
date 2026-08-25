@@ -8,6 +8,7 @@ use App\Domain\Geo\Grid;
 use App\Domain\Geo\SurveyArea;
 use App\Domain\Terrain\AccessWay;
 use App\Domain\Terrain\CanopyClosure;
+use App\Domain\Terrain\CanopyCoverSource;
 use App\Domain\Terrain\ElevationSampler;
 use App\Domain\Terrain\ForestCover;
 use App\Domain\Terrain\GeologySource;
@@ -24,7 +25,8 @@ use App\Infrastructure\Raster\TerrainDerivatives;
 
 /**
  * Builds the static half of the model once: elevation derivatives, forest cover,
- * geology and hydrography for every cell. Weather stays dynamic at query time.
+ * geology, access and tree-cover density for every cell. Weather stays dynamic
+ * at query time.
  */
 final readonly class PrecomputeTerrain
 {
@@ -33,6 +35,7 @@ final readonly class PrecomputeTerrain
         private ElevationSampler $elevationSampler,
         private LandCoverSource $landCover,
         private GeologySource $geology,
+        private CanopyCoverSource $canopyCoverSource,
         private TerrainCellStore $cellStore,
         private PolygonRasterizer $rasterizer,
         private ChamferDistance $distance,
@@ -64,6 +67,7 @@ final readonly class PrecomputeTerrain
         [$geology, $geologyCount] = $this->rasterizeGeology($grid, $progress);
         [$water, $waterCount] = $this->rasterizeWater($grid, $progress);
         [$park, $path, $accessWays] = $this->rasterizeAccess($grid, $progress);
+        [$canopyCover, $canopyCoverCells] = $this->sampleCanopyCover($grid, $progress);
 
         $progress->stageStarted('Distances aux lisières et à l\'eau');
         $insideForest = $this->distance->compute(
@@ -92,7 +96,7 @@ final readonly class PrecomputeTerrain
         $progress->stageStarted('Écriture de la base précalculée');
         $written = $this->cellStore->replaceAll(
             $grid,
-            $this->buildCells($grid, $elevation, $derived, $cover, $geology, $insideForest, $towardsForest, $towardsWater, $access, $progress),
+            $this->buildCells($grid, $elevation, $derived, $cover, $geology, $insideForest, $towardsForest, $towardsWater, $access, $canopyCover, $park, $path, $progress),
         );
         $progress->stageFinished('Écriture de la base précalculée');
 
@@ -106,6 +110,7 @@ final readonly class PrecomputeTerrain
             geologyPolygons: $geologyCount,
             waterFeatures: $waterCount,
             accessWays: $accessWays,
+            canopyCoverCells: $canopyCoverCells,
             unavailableChunks: $this->landCover->unavailableChunks(),
             durationSeconds: microtime(true) - $startedAt,
         );
@@ -269,6 +274,25 @@ final readonly class PrecomputeTerrain
         return [$park, $path, $wayCount];
     }
 
+    /** @return array{0: \SplFixedArray<int>, 1: int} */
+    private function sampleCanopyCover(Grid $grid, PrecomputationProgress $progress): array
+    {
+        $stage = 'Taux de couvert (Copernicus TCD)';
+        $progress->stageStarted($stage);
+
+        $canopyCover = $this->canopyCoverSource->sample($grid);
+        $known = 0;
+        for ($i = 0, $total = $grid->cellCount(); $i < $total; $i++) {
+            if ($canopyCover[$i] >= 0) {
+                $known++;
+            }
+        }
+
+        $progress->stageFinished($stage);
+
+        return [$canopyCover, $known];
+    }
+
     private function stampAccess(\SplFixedArray $raster, Grid $grid, AccessWay $way): void
     {
         if ($way->isArea && \count($way->points) >= 3) {
@@ -295,7 +319,10 @@ final readonly class PrecomputeTerrain
      * @param \SplFixedArray<int> $towardsForest
      * @param \SplFixedArray<int> $towardsWater
      * @param \SplFixedArray<int> $access
-     * @return \Generator<int, array{column: int, row: int, profile: TerrainProfile}>
+     * @param \SplFixedArray<int> $canopyCover
+     * @param \SplFixedArray<int> $park
+     * @param \SplFixedArray<int> $path
+     * @return \Generator<int, array{column: int, row: int, profile: TerrainProfile, park: int, path: int}>
      */
     private function buildCells(
         Grid $grid,
@@ -307,6 +334,9 @@ final readonly class PrecomputeTerrain
         \SplFixedArray $towardsForest,
         \SplFixedArray $towardsWater,
         \SplFixedArray $access,
+        \SplFixedArray $canopyCover,
+        \SplFixedArray $park,
+        \SplFixedArray $path,
         PrecomputationProgress $progress,
     ): \Generator {
         $stage = 'Écriture de la base précalculée';
@@ -326,6 +356,8 @@ final readonly class PrecomputeTerrain
                 yield [
                     'column' => $column,
                     'row' => $row,
+                    'park' => $park[$index],
+                    'path' => $path[$index],
                     'profile' => new TerrainProfile(
                         coordinates: $grid->coordinatesAt($column, $row),
                         elevationMeters: (int) round($elevation[$index]),
@@ -339,6 +371,7 @@ final readonly class PrecomputeTerrain
                         canopy: StandCode::canopy($packed),
                         substrate: Substrate::tryFrom($geology[$index]) ?? Substrate::Unknown,
                         accessDistanceMeters: $access[$index],
+                        canopyCoverPercent: $canopyCover[$index] >= 0 ? $canopyCover[$index] : null,
                     ),
                 ];
             }

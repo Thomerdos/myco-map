@@ -27,6 +27,19 @@ mention de la source :
 Si vous republiez une base qui mélange BD Forêt et des données OSM (lisières, hydrographie),
 l'ODbL de la section précédente continue de s'appliquer à l'ensemble.
 
+## Copernicus HRL — Tree Cover Density (optionnel)
+
+Utilisé seulement si vous lancez `./dev.sh tcd` : les GeoTIFF **ne sont pas redistribués** par ce
+dépôt. Produit [High Resolution Layer Tree Cover Density](https://land.copernicus.eu/en/products/high-resolution-layer-forests-and-tree-cover/tree-cover-density-2018-present-raster-10-m-europe-yearly)
+du Copernicus Land Monitoring Service (dérivé Sentinel-2, 10 m, 0–100 %), téléchargé via
+l'[API OData](https://documentation.dataspace.copernicus.eu/APIs/OData.html) du Copernicus Data
+Space. Accès libre avec compte [dataspace.copernicus.eu](https://dataspace.copernicus.eu).
+Licence Copernicus (utilisation libre sous réserve d'attribution) :
+
+> Contains modified Copernicus Land Monitoring Service data [année]
+
+La colonne `canopy_cover` de la base dérive de ce produit lorsqu'il a été ingéré.
+
 ## AWS Terrain Tiles — relief
 
 Jeu de données [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) du programme AWS Open Data, héritier du projet Mapzen. Il agrège plusieurs sources selon la zone ; pour les Alpes françaises il s'appuie principalement sur le SRTM de la NASA et sur des levés nationaux.

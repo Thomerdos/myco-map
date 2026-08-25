@@ -5,6 +5,8 @@ parameters:
     app.bdforet_default_path: '%kernel.project_dir%/var/bdforet/formation-vegetale.geojsonl'
     app.geologie_path: '%env(default:app.geologie_default_path:GEOLOGIE_PATH)%'
     app.geologie_default_path: '%kernel.project_dir%/var/geologie/formations.geojsonl'
+    app.tcd_path: '%env(default:app.tcd_default_path:TCD_PATH)%'
+    app.tcd_default_path: '%kernel.project_dir%/var/tcd/canopy-cover.json'
     app.elevation_zoom: 13
     app.area.name: 'Grenoble — Chartreuse, Belledonne, Vercors'
     app.area.south: 44.72
@@ -24,7 +26,7 @@ services:
     App\:
         resource: '../src/'
         exclude:
-            - '../src/Domain/**/{Coordinates,BoundingBox,Grid,GridWindow,SurveyArea,TerrainProfile,Exposure,ForestPolygon,GeologyPolygon,WaterFeature,AccessWay,StandCode,Species,HarvestWindow,AltitudeBand,SlopeBand,CriterionScore,SuitabilityScore,SeasonAssessment,FlushClock,WeatherConditions,WeatherField,LayerLegend}.php'
+            - '../src/Domain/**/{Coordinates,BoundingBox,Grid,GridWindow,SurveyArea,TerrainProfile,Exposure,ForestPolygon,GeologyPolygon,WaterFeature,AccessWay,AccessWalk,StandCode,Species,HarvestWindow,AltitudeBand,SlopeBand,CanopyDensityBand,CriterionScore,SuitabilityScore,SeasonAssessment,FlushClock,WeatherConditions,WeatherField,LayerLegend}.php'
             - '../src/Application/Cartography/{LayerGridQuery,LayerGridView}.php'
             - '../src/Application/Precomputation/PrecomputationReport.php'
             - '../src/Kernel.php'
@@ -80,9 +82,14 @@ services:
         arguments:
             $datasetPath: '%app.geologie_path%'
 
+    App\Infrastructure\Raster\TreeCoverDensityRaster:
+        arguments:
+            $datasetPath: '%app.tcd_path%'
+
     App\Domain\Terrain\ElevationSampler: '@App\Infrastructure\Elevation\TerrariumTileElevation'
     App\Domain\Terrain\LandCoverSource: '@App\Infrastructure\LandCover\BdForetLandCover'
     App\Domain\Terrain\GeologySource: '@App\Infrastructure\Geology\Charm50Geology'
+    App\Domain\Terrain\CanopyCoverSource: '@App\Infrastructure\Raster\TreeCoverDensityRaster'
     App\Domain\Terrain\TerrainCellStore: '@App\Infrastructure\Persistence\DbalTerrainCellStore'
     App\Domain\Weather\WeatherSource: '@App\Infrastructure\Weather\OpenMeteoWeather'
     App\Domain\Mycology\SpeciesCatalog: '@App\Infrastructure\Mycology\InMemorySpeciesCatalog'

@@ -59,7 +59,7 @@ enum MapLayer: string
     public function isCategorical(): bool
     {
         return match ($this) {
-            self::Cover, self::StandDensity, self::Geology => true,
+            self::Cover, self::Geology => true,
             default => false,
         };
     }
@@ -69,6 +69,7 @@ enum MapLayer: string
         return match ($this) {
             self::Elevation, self::ForestEdge, self::Access => 'm',
             self::Slope => '°',
+            self::StandDensity => '%',
             self::Weather => 'mm',
             default => null,
         };

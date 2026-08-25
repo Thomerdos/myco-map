@@ -15,7 +15,7 @@ final readonly class Species
      * @param list<HarvestWindow> $harvestWindows
      * @param array<int, float> $coverAffinity ForestCover value => 0..1 (fallback when the host is unknown)
      * @param array<int, float> $hostAffinity HostTree value => 0..1 (used when the stand names a host)
-     * @param array<int, float> $standDensityAffinity CanopyClosure value => 0..1 (basal-area proxy)
+     * @param array<int, float> $standDensityAffinity CanopyClosure value => 0..1 (FO/FF fallback)
      * @param array<int, float> $geologyAffinity Substrate value => 0..1
      */
     public function __construct(
@@ -39,6 +39,7 @@ final readonly class Species
         public array $hostAffinity = [],
         public array $standDensityAffinity = [],
         public array $geologyAffinity = [],
+        public ?CanopyDensityBand $canopyDensity = null,
     ) {
     }
 
@@ -71,13 +72,25 @@ final readonly class Species
     }
 
     /**
-     * Proxy for stand basal area via BD Forêt FO/FF. Intermediate density (open canopy)
-     * is closer to published optima (~15–20 m²/ha) than fully closed stands.
+     * Continuous tree-cover percent (Copernicus TCD) when known; otherwise BD Forêt FO/FF.
+     * Intermediate cover is closer to published basal-area optima (~15–20 m²/ha).
      */
-    public function standDensitySuitability(ForestCover $cover, CanopyClosure $canopy): float
-    {
+    public function standDensitySuitability(
+        ForestCover $cover,
+        CanopyClosure $canopy,
+        ?int $canopyCoverPercent = null,
+    ): float {
         if (!$cover->isForest()) {
             return $this->requiresForest ? 0.08 : 0.55;
+        }
+
+        if ($canopyCoverPercent !== null) {
+            $band = $this->canopyDensity ?? new CanopyDensityBand(
+                closedFloor: $this->requiresForest ? 0.76 : 0.55,
+                sparseFloor: $this->requiresForest ? 0.22 : 0.60,
+            );
+
+            return max(0.0, min(1.0, $band->suitability($canopyCoverPercent)));
         }
 
         if (isset($this->standDensityAffinity[$canopy->value])) {

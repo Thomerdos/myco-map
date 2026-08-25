@@ -3,6 +3,7 @@ import { Button, Tooltip } from '@vuetify/v0'
 import { computed, shallowRef } from 'vue'
 import type { LayerDescriptor, LayerGrid, ScoreProjection, SpeciesSummary } from '../types'
 import { legendGradient } from '../lib/colorScale'
+import { buildKmz, buildSectorsGpx, downloadBlob, exportBasename, hasExportableSectors } from '../lib/gpsExport'
 import RangeSlider from './ui/RangeSlider.vue'
 import SelectControl from './ui/SelectControl.vue'
 import SwitchControl from './ui/SwitchControl.vue'
@@ -141,6 +142,7 @@ const seasonTitle = computed(() => {
 const seasonDetail = computed(() => {
   const species = props.grid?.species
   if (!showSeasonTooltip.value || !species) return null
+  if (species.seasonGate) return species.seasonGate
   if (species.activeWindow) return species.activeWindow.label
   if (species.nextWindow) return `Prochaine fenêtre : ${species.nextWindow.label}`
   return null
@@ -149,6 +151,28 @@ const seasonDetail = computed(() => {
 function emitChoice(event: 'update:basemap', value: unknown) {
   if (value == null || value === '') return
   emit(event, String(value))
+}
+
+const canExportKmz = computed(() =>
+  props.grid != null && props.grid.values.length > 0,
+)
+
+const canExportGpx = computed(() =>
+  props.grid != null && hasExportableSectors(props.grid),
+)
+
+function downloadKmz() {
+  if (!props.grid) return
+  const blob = buildKmz(props.grid, props.opacity)
+  if (!blob) return
+  downloadBlob(blob, `${exportBasename(props.grid)}.kmz`)
+}
+
+function downloadSectorsGpx() {
+  if (!props.grid) return
+  const blob = buildSectorsGpx(props.grid)
+  if (!blob) return
+  downloadBlob(blob, `${exportBasename(props.grid)}-secteurs.gpx`)
 }
 </script>
 
@@ -185,7 +209,7 @@ function emitChoice(event: 'update:basemap', value: unknown) {
             <em>{{ scientificName }}</em>
             <span
               class="inline-block h-2 w-2 shrink-0 rounded-full"
-              :class="props.grid?.species?.inSeason ? 'bg-success' : 'bg-[#c48a2a]'"
+              :class="props.grid?.species?.inSeason ? 'bg-success' : 'bg-[#c45c12]'"
               aria-hidden="true"
             />
           </button>
@@ -269,6 +293,35 @@ function emitChoice(event: 'update:basemap', value: unknown) {
           Masquer les zones peu accessibles
         </SwitchControl>
       </div>
+      <p class="mt-3 mb-1 text-xs text-secondary">Exporter pour GPS</p>
+      <div class="flex gap-1">
+        <button
+          type="button"
+          class="flex-1 cursor-pointer rounded-md border px-2 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+          :class="canExportKmz
+            ? 'border-[#cfc6b1] bg-[#fffdf8] text-primary'
+            : 'border-[#e2dac9] bg-[#fffdf8] text-secondary'"
+          :disabled="!canExportKmz"
+          @click="downloadKmz"
+        >
+          KMZ (zones)
+        </button>
+        <button
+          type="button"
+          class="flex-1 cursor-pointer rounded-md border px-2 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+          :class="canExportGpx
+            ? 'border-[#cfc6b1] bg-[#fffdf8] text-primary'
+            : 'border-[#e2dac9] bg-[#fffdf8] text-secondary'"
+          :disabled="!canExportGpx"
+          title="Taches à 90 ou plus, libellées par l'indice"
+          @click="downloadSectorsGpx"
+        >
+          GPX (points)
+        </button>
+      </div>
+      <p class="mt-1 text-[0.68rem] leading-snug text-secondary">
+        Masque + points libellés par l'indice (≥ 90). Locus / AlpineQuest / Iphigénie pour le KMZ ; Visorando et OsmAnd pour le GPX.
+      </p>
       <Button.Group
         class="mt-3 flex w-full gap-1"
         mandatory

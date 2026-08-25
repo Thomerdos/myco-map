@@ -70,9 +70,9 @@ final class BdForetLandCover implements LandCoverSource
         return $this->fallback->waterFeatures($bounds);
     }
 
-    public function accessWays(BoundingBox $bounds): iterable
+    public function accessWays(BoundingBox $bounds, ?BoundingBox $clip = null): iterable
     {
-        return $this->fallback->accessWays($bounds);
+        return $this->fallback->accessWays($bounds, $clip);
     }
 
     /** @return iterable<int, list<ForestPolygon>> */

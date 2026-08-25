@@ -21,6 +21,8 @@ final class DbalTerrainCellStore implements TerrainCellStore
 
     private ?Grid $cachedGrid = null;
     private ?bool $hasAccessColumn = null;
+    private ?bool $hasCanopyCoverColumn = null;
+    private ?bool $hasNetworkColumns = null;
 
     public function __construct(private readonly Connection $connection)
     {
@@ -49,6 +51,9 @@ final class DbalTerrainCellStore implements TerrainCellStore
                 water_distance INTEGER NOT NULL,
                 geology INTEGER NOT NULL DEFAULT 0,
                 access_distance INTEGER NOT NULL DEFAULT 9999,
+                canopy_cover INTEGER,
+                park INTEGER NOT NULL DEFAULT 0,
+                path INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (row_index, column_index)
             ) WITHOUT ROWID
             SQL);
@@ -96,6 +101,9 @@ final class DbalTerrainCellStore implements TerrainCellStore
                     $profile->waterDistanceMeters,
                     $profile->substrate->value,
                     $profile->accessDistanceMeters,
+                    $profile->canopyCoverPercent,
+                    (int) ($cell['park'] ?? 0),
+                    (int) ($cell['path'] ?? 0),
                 ];
 
                 if (\count($buffer) >= self::INSERT_CHUNK) {
@@ -136,6 +144,8 @@ final class DbalTerrainCellStore implements TerrainCellStore
 
         $this->cachedGrid = null;
         $this->hasAccessColumn = true;
+        $this->hasCanopyCoverColumn = true;
+        $this->hasNetworkColumns = true;
 
         return $written;
     }
@@ -179,7 +189,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
     public function readWindow(GridWindow $window): iterable
     {
         $sql = 'SELECT column_index, row_index, latitude, longitude, elevation, slope, aspect, curvature,
-                       cover, edge_distance, water_distance, geology'.$this->accessSelect().'
+                       cover, edge_distance, water_distance, geology'.$this->accessSelect().$this->canopyCoverSelect().$this->networkSelect().'
                 FROM terrain_cell
                 WHERE row_index BETWEEN :firstRow AND :lastRow
                   AND column_index BETWEEN :firstColumn AND :lastColumn';
@@ -204,6 +214,8 @@ final class DbalTerrainCellStore implements TerrainCellStore
                 'column' => (int) $row['column_index'],
                 'row' => (int) $row['row_index'],
                 'profile' => $this->hydrate($row),
+                'park' => (int) ($row['park'] ?? 0),
+                'path' => (int) ($row['path'] ?? 0),
             ];
         }
     }
@@ -212,7 +224,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
     {
         $row = $this->connection->fetchAssociative(
             'SELECT column_index, row_index, latitude, longitude, elevation, slope, aspect, curvature,
-                    cover, edge_distance, water_distance, geology'.$this->accessSelect().'
+                    cover, edge_distance, water_distance, geology'.$this->accessSelect().$this->canopyCoverSelect().'
              FROM terrain_cell
              WHERE latitude BETWEEN :latMin AND :latMax
                AND longitude BETWEEN :lngMin AND :lngMax
@@ -232,10 +244,10 @@ final class DbalTerrainCellStore implements TerrainCellStore
         return $row === false ? null : $this->hydrate($row);
     }
 
-    /** @param list<array<int, float|int>> $buffer */
+    /** @param list<array<int, float|int|null>> $buffer */
     private function flush(array $buffer): void
     {
-        $placeholders = implode(',', array_fill(0, \count($buffer), '(?,?,?,?,?,?,?,?,?,?,?,?,?)'));
+        $placeholders = implode(',', array_fill(0, \count($buffer), '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'));
         $parameters = [];
 
         foreach ($buffer as $values) {
@@ -246,7 +258,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
 
         $this->connection->executeStatement(
             'INSERT OR REPLACE INTO terrain_cell
-             (row_index, column_index, latitude, longitude, elevation, slope, aspect, curvature, cover, edge_distance, water_distance, geology, access_distance)
+             (row_index, column_index, latitude, longitude, elevation, slope, aspect, curvature, cover, edge_distance, water_distance, geology, access_distance, canopy_cover, park, path)
              VALUES ' . $placeholders,
             $parameters,
         );
@@ -270,12 +282,25 @@ final class DbalTerrainCellStore implements TerrainCellStore
             canopy: StandCode::canopy($packed),
             substrate: Substrate::tryFrom((int) ($row['geology'] ?? 0)) ?? Substrate::Unknown,
             accessDistanceMeters: (int) ($row['access_distance'] ?? AccessThreshold::UNREACHABLE),
+            canopyCoverPercent: isset($row['canopy_cover']) && $row['canopy_cover'] !== null
+                ? (int) $row['canopy_cover']
+                : null,
         );
     }
 
     private function accessSelect(): string
     {
         return $this->hasAccessColumn() ? ', access_distance' : '';
+    }
+
+    private function canopyCoverSelect(): string
+    {
+        return $this->hasCanopyCoverColumn() ? ', canopy_cover' : '';
+    }
+
+    private function networkSelect(): string
+    {
+        return $this->hasNetworkColumns() ? ', park, path' : '';
     }
 
     private function hasAccessColumn(): bool
@@ -287,10 +312,36 @@ final class DbalTerrainCellStore implements TerrainCellStore
         try {
             $names = $this->connection->fetchFirstColumn("SELECT name FROM pragma_table_info('terrain_cell')");
             $this->hasAccessColumn = \in_array('access_distance', $names, true);
+            $this->hasCanopyCoverColumn = \in_array('canopy_cover', $names, true);
+            $this->hasNetworkColumns = \in_array('park', $names, true) && \in_array('path', $names, true);
         } catch (\Throwable) {
             $this->hasAccessColumn = false;
+            $this->hasCanopyCoverColumn = false;
+            $this->hasNetworkColumns = false;
         }
 
         return $this->hasAccessColumn;
+    }
+
+    private function hasCanopyCoverColumn(): bool
+    {
+        if ($this->hasCanopyCoverColumn !== null) {
+            return $this->hasCanopyCoverColumn;
+        }
+
+        $this->hasAccessColumn();
+
+        return $this->hasCanopyCoverColumn ?? false;
+    }
+
+    private function hasNetworkColumns(): bool
+    {
+        if ($this->hasNetworkColumns !== null) {
+            return $this->hasNetworkColumns;
+        }
+
+        $this->hasAccessColumn();
+
+        return $this->hasNetworkColumns ?? false;
     }
 }

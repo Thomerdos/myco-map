@@ -100,7 +100,10 @@ export interface Weather {
   daysSinceSoakingRain: number | null
   soakingRain: number
   accumulatedRain: number
+  rainSinceSoaking?: number
+  litterSoilMoisture?: number
   brokeDrySpell: boolean
+  driedOutAfterSoaking?: boolean
   label: string
   degraded?: boolean
   soakingEvents?: { daysSince: number; millimetres: number }[]
@@ -124,6 +127,7 @@ export interface Sector {
   hostTreeCode: number
   canopy: string
   canopyCode: number
+  canopyCover?: number | null
   accessMeters?: number
 }
 
@@ -155,6 +159,7 @@ export interface LayerGrid {
     summary: string
     hostTrees: string
     inSeason: boolean
+    seasonGate?: string
     activeWindow: HarvestWindow | null
     nextWindow: HarvestWindow | null
     harvestWindows: HarvestWindow[]
@@ -168,6 +173,26 @@ export interface CriterionDetail {
   weight: number
   rationale: string
   explanation: string
+}
+
+export interface LocationHorizonDay {
+  date: string
+  offset: number
+  label: string
+  score: number
+  inSeason: boolean
+  weather: Weather
+}
+
+export interface AccessWalk {
+  reachable: boolean
+  meters: number
+  minutes: number
+  alongMeters: number
+  approachMeters: number
+  start: { lat: number; lng: number } | null
+  coordinates: { lat: number; lng: number }[]
+  approachFromIndex: number
 }
 
 export interface LocationReport {
@@ -185,6 +210,7 @@ export interface LocationReport {
     hostTreeCode: number
     canopy: string
     canopyCode: number
+    canopyCover?: number | null
     edgeDistance: number
     waterDistance: number
     accessDistance?: number
@@ -206,6 +232,7 @@ export interface LocationReport {
   level: string
   levelLabel: string
   inSeason: boolean
+  seasonGate?: string
   activeWindow: HarvestWindow | null
   nextWindow: HarvestWindow | null
   breakdown: CriterionDetail[]
@@ -218,4 +245,6 @@ export interface LocationReport {
     levelLabel: string
     inSeason: boolean
   }[]
+  horizon?: LocationHorizonDay[]
+  accessWalk?: AccessWalk
 }

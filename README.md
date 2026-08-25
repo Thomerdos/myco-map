@@ -7,10 +7,11 @@ L'application croise relief, couvert forestier, hydrographie et météo récente
 ## Ce que fait l'application
 
 - **Carte raster continue** à **50 m** de résolution : le couvert, le relief dérivé (pente, exposition, courbure) et les distances lisière / eau sont plus fins qu'à 100 m ; les masques continus sont lissés à l'affichage, le couvert reste catégoriel (carrés nets).
-- **Masques de critères** interchangeables : chance de trouver (score combiné), altitude, exposition, pente, couvert forestier, humidité topographique, distance à la lisière, apport en eau, accès parking + chemin.
+- **Masques de critères** interchangeables : chance de trouver (score combiné), altitude, exposition, pente, couvert forestier, densité du peuplement, humidité topographique, distance à la lisière, apport en eau, accès parking + chemin.
 - **Six espèces** avec profils d'habitat distincts et fenêtres de cueillette : cèpe, trompette de la mort, chanterelles, girolle, pied de mouton, morille.
 - **Détail au clic** : altitude, pente, exposition, couvert, essence dominante, densité, distances lisière, cours d'eau et accès, plus la décomposition du score (explication par critère).
 - **Meilleurs secteurs visibles** classés, espacés d'au moins 900 m pour proposer des points de départ distincts.
+- **Export GPS** : KMZ (masque + points libellés par l'indice) et GPX (mêmes points) pour Locus, OsmAnd, Visorando…
 - **Fonds de carte** plan, topographique et satellite.
 
 ## Approche du modèle
@@ -20,15 +21,18 @@ Modèle **par règles expertes**, volontairement transparent plutôt qu'une boî
 | Critère | Poids | Ce qui est évalué |
 |---|---|---|
 | Météo récente | 16 % | Phénologie de pousse, apport en eau (épisode + accumulation), température, humidité |
-| Couvert forestier | 14 % | Essence dominante / feu feuillus–conifères–mixte |
-| Saison | 13 % | Fenêtres de cueillette |
+| Densité du peuplement | 16 % | Taux de couvert Copernicus 0–100 % (repli FO/FF) |
+| Couvert forestier | 14 % | Essence dominante / feuillu–conifère–mixte |
 | Altitude | 13 % | Tranche altitudinale |
 | Exposition | 13 % | Fraîcheur du versant (ajustée à l'altitude) |
-| Densité du peuplement | 10 % | Proxy FO/FF (surface terrière) |
+| Géologie / substrat | 10 % | Calcaire / siliceux / mixte (BRGM Charm-50) |
 | Humidité topographique | 9 % | Concavité, drainage, proximité de l'eau |
-| Géologie / substrat | 6 % | Calcaire / siliceux / mixte (BRGM Charm-50) |
-| Position lisière | 4 % | Lisière vs cœur de massif |
+| Position lisière | 7 % | Lisière vs cœur de massif |
 | Pente | 2 % | Effet négatif monotone |
+
+La **saison** n'est pas un poids : hors fenêtre de cueillette le score est plafonné à 38
+(« À éviter »), et l'interface affiche En saison / Hors saison. Ça empêche d'imaginer des
+morilles en septembre tout en laissant les 100 points classer le terrain en pleine saison.
 
 Le poids fort donné à l'exposition et son **ajustement altitudinal** sont propres au contexte montagnard : en bas les versants nord gardent l'humidité, plus haut les versants plus chauds prennent l'avantage.
 
@@ -40,7 +44,7 @@ Découpage DDD, sans suffixe `Service` :
 backend/src/
 ├── Domain/              # Métier pur, sans dépendance framework
 │   ├── Geo/             # Coordinates, BoundingBox, Grid, GridWindow, SurveyArea
-│   ├── Terrain/         # TerrainProfile, ForestCover, HostTree, CanopyClosure, StandCode, Exposure, AccessThreshold + ports
+│   ├── Terrain/         # TerrainProfile, ForestCover, HostTree, CanopyClosure, StandCode, Exposure, AccessThreshold, CanopyCoverSource + ports
 │   ├── Weather/         # WeatherConditions, WeatherField + port
 │   ├── Mycology/        # Species, SuitabilityCalculator, Criterion, SeasonAssessment
 │   └── Cartography/     # MapLayer, LayerLegendFactory, LayerValueResolver
@@ -52,13 +56,13 @@ backend/src/
     ├── LandCover/       # BdForetLandCover (optionnel) + OverpassLandCover (OpenStreetMap)
     ├── Weather/         # OpenMeteoWeather
     ├── Persistence/     # DbalTerrainCellStore (SQLite)
-    ├── Raster/          # PolygonRasterizer, ChamferDistance, TerrainDerivatives, PathNetworkAccess
+    ├── Raster/          # PolygonRasterizer, ChamferDistance, TerrainDerivatives, PathNetworkAccess, TreeCoverDensityRaster
     ├── Mycology/        # InMemorySpeciesCatalog
     ├── Http/Controller/ # MapController
     └── Console/         # PrecomputeCommand
 ```
 
-Le domaine définit des **ports** (`ElevationSampler`, `LandCoverSource`, `WeatherSource`, `TerrainCellStore`, `SpeciesCatalog`) implémentés dans l'infrastructure et câblés dans `config/services.yaml`.
+Le domaine définit des **ports** (`ElevationSampler`, `LandCoverSource`, `GeologySource`, `CanopyCoverSource`, `WeatherSource`, `TerrainCellStore`, `SpeciesCatalog`) implémentés dans l'infrastructure et câblés dans `config/services.yaml`.
 
 ## Précalcul
 
@@ -69,8 +73,9 @@ La partie statique du modèle est calculée une fois et stockée en SQLite :
 3. Rasterisation des polygones forestiers (BD Forêt si présente, sinon OSM), clairières comprises, essence et densité empaquetées dans un `StandCode`
 4. Rasterisation de l'hydrographie
 5. Transformées de distance aux lisières et aux cours d'eau
-6. Accès : marche le long des chemins OSM depuis un parking (budget 1,5 km + 150 m d'approche)
-7. Écriture en base
+6. Accès : marche depuis un parking ou une route OSM à fond blanc (pas les pistes), budget 2 km + 500 m d'approche
+7. Taux de couvert Copernicus TCD (si `./dev.sh tcd` a produit le raster), sinon repli FO/FF
+8. Écriture en base
 
 La météo reste dynamique : elle est récupérée et interpolée à la requête, avec un cache de deux heures.
 
@@ -114,6 +119,20 @@ Ouvrez [http://127.0.0.1:43123](http://127.0.0.1:43123).
 
 `restore-data` décompresse `data/myco-terrain-50m.sqlite.gz` et évite le précalcul. **Après le passage à 50 m**, une ancienne archive 100 m n'est plus utilisable : lancez `./dev.sh precompute` (idéalement avec BD Forêt via `./dev.sh bdforet`), puis `./dev.sh export-data` pour publier la nouvelle archive.
 
+## Emporter la carte sur le téléphone
+
+Le bouton **Exporter pour GPS** (panneau Affichage) enregistre un **instantané** de la vue
+(espèce, date, emprise). Les taches ≥ 90 sont des points libellés par l'indice, classés
+du meilleur au moins bon. Réexportez le jour J. Cadrer d'abord la zone du jour.
+
+| Fichier | Contenu | Où l'ouvrir |
+|---|---|---|
+| **KMZ (zones)** | Masque coloré + points (libellé = indice) | Locus Map, AlpineQuest, Iphigénie |
+| **GPX (points)** | Mêmes points, libellé = indice | OsmAnd, Visorando, Organic Maps |
+
+Le fond IGN et la pastille GPS viennent de l'appli. Le GPX proposé au clic (Lieu / Marche)
+reste un chemin d'accès, pas les zones.
+
 ## Commandes disponibles
 
 | Commande | Rôle |
@@ -123,6 +142,8 @@ Ouvrez [http://127.0.0.1:43123](http://127.0.0.1:43123).
 | `./dev.sh precompute` | Recalcule la base depuis les sources distantes |
 | `./dev.sh export-data` | Réexporte la base vers `data/` pour publication |
 | `./dev.sh bdforet <shp…>` | Convertit BD Forêt V2 pour un couvert forestier précis |
+| `./dev.sh geologie [zip…]` | Convertit BRGM Charm-50 pour le substrat |
+| `./dev.sh tcd [tif…]` | Télécharge / convertit Copernicus Tree Cover Density (0–100 %) |
 | `./dev.sh backend` | API sur le port 8765 |
 | `./dev.sh frontend` | Interface sur le port 43123 |
 
@@ -136,13 +157,15 @@ Ouvrez [http://127.0.0.1:43123](http://127.0.0.1:43123).
 
 ## Sources de données
 
-Toutes gratuites et sans clé d'API :
+Toutes gratuites. L'application n'utilise pas de clé d'API ; seul le téléchargement TCD
+demande un compte [Copernicus Data Space](https://dataspace.copernicus.eu).
 
 | Source | Usage |
 |---|---|
 | [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) | Relief : altitude, pente, exposition, courbure |
 | [OpenStreetMap / Overpass](https://overpass-api.de/) | Couvert forestier, essences, hydrographie |
 | [Open-Meteo](https://open-meteo.com/) | Pluie, température, humidité, humidité du sol |
+| [Copernicus HRL Tree Cover Density](https://land.copernicus.eu/en/products/high-resolution-layer-forests-and-tree-cover/tree-cover-density-2018-present-raster-10-m-europe-yearly) | Taux de couvert 0–100 % (optionnel, `./dev.sh tcd`) |
 | [OpenTopoMap](https://opentopomap.org/) · OSM · Esri | Fonds de carte |
 
 ### Couvert forestier précis avec BD Forêt V2 (optionnel)
@@ -167,16 +190,38 @@ polygone, reprojeté en WGS84). Dès que ce fichier existe, il est utilisé auto
 l'application retombe sur OpenStreetMap sans rien casser. L'hydrographie vient toujours d'OSM.
 Un autre emplacement se déclare avec la variable d'environnement `BDFORET_PATH`.
 
-**Copernicus / Sentinel-2** reste une piste non implémentée : indice de végétation et fermeture du
-couvert, utiles pour la densité du peuplement et les coupes récentes.
+### Densité du peuplement — Copernicus Tree Cover Density
+
+Le critère densité lit le **taux de couvert arboré 0–100 %** (produit Sentinel-2 Copernicus HRL,
+pas le NDVI brut, qui sature dans les peuplements fermés). Courbe en cloche par espèce : l'optimum
+de rendement est un couvert intermédiaire, pas le plus fermé.
+
+Les tuiles 10 m de l'emprise sont téléchargées via l'[API OData](https://documentation.dataspace.copernicus.eu/APIs/OData.html)
+du Copernicus Data Space (collection `CLMS`, jeu `clms_vlcc_tree-cover-density_europe_10m_yearly_v1`).
+Un compte gratuit sur [dataspace.copernicus.eu](https://dataspace.copernicus.eu) est requis pour le
+téléchargement (pas pour l'application elle-même). Nécessite `gdal-bin` pour la conversion.
+
+```bash
+export CDSE_USERNAME='…'
+export CDSE_PASSWORD='…'   # ou CDSE_REFRESH_TOKEN
+./dev.sh tcd               # dernière année disponible ; TCD_YEAR=2023 pour figer
+./dev.sh precompute
+```
+
+Des GeoTIFF déjà téléchargés se convertissent hors-ligne : `./dev.sh tcd tuile.tif [tuile2.tif…]`.
+
+La conversion écrit `backend/var/tcd/canopy-cover.bin` + `.json` (grille 50 m). Dès que ces
+fichiers existent, ils sont utilisés automatiquement ; sinon le modèle retombe sur FO/FF
+sans rien casser. Un autre emplacement se déclare avec `TCD_PATH`. Les tuiles brutes restent dans
+`backend/var/tcd/source/` (jamais commitées).
 
 ## Limites connues
 
 - Les essences OSM restent approximatives : beaucoup de polygones ne portent pas de tag `leaf_type`, classés alors « essence indéterminée ». BD Forêt V2 lève cette limite (voir ci-dessus).
-- La densité de peuplement est un **proxy FO/FF** (pas de surface terrière en m²/ha). Piste : NDVI Sentinel-2.
+- La densité de peuplement est un **taux de couvert Copernicus** (0–100 %), pas des m²/ha. Sans raster TCD, repli FO/FF.
 - La géologie Charm-50 donne un **substrat** (calcaire / siliceux / mixte), pas un pH de sol mesuré.
 - Les fenêtres de cueillette sont calées sur des moyennes régionales, pas sur la phénologie de l'année en cours.
-- La pression de cueillette, la propriété privée et la réglementation locale ne sont pas modélisées. L'accès parking–chemin (1,5 km le long d'OSM) est un filtre d'affichage, pas un droit d'entrer.
+- La pression de cueillette, la propriété privée et la réglementation locale ne sont pas modélisées. L'accès parking–chemin (2 km le long d'OSM) est un filtre d'affichage, pas un droit d'entrer.
 
 ## Calibrage avec vos spots
 

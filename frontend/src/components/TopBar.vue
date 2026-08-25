@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Button } from '@vuetify/v0'
 import type { ProjectionDay, ScoreProjection } from '../types'
-import { projectionMeterPercent, projectionScoreColor, roundedScore } from '../lib/scoreColor'
+import { projectionMeterPercent, roundedScore, scoreInk } from '../lib/scoreColor'
 
 defineProps<{
   areaName: string
@@ -12,6 +12,7 @@ defineProps<{
   controlsOpen: boolean
   weatherLabel: string | null
   inSeason: boolean | null
+  seasonGate: string | null
   projection: ScoreProjection | null
   projectionDate: string
 }>()
@@ -72,14 +73,14 @@ function dayTitle(day: ProjectionDay): string {
             >{{ day.label }}</span>
             <strong
               class="mt-0.5 text-[0.82rem] leading-none tabular-nums"
-              :style="{ color: projectionScoreColor(day.best) }"
+              :style="{ color: scoreInk(day.best) }"
             >{{ roundedScore(day.best) ?? '—' }}</strong>
             <span class="mt-1 h-1 w-[80%] overflow-hidden rounded-full bg-[#e4dccb]">
               <span
                 class="block h-full rounded-full"
                 :style="{
                   width: `${projectionMeterPercent(day.best)}%`,
-                  background: projectionScoreColor(day.best),
+                  background: scoreInk(day.best),
                 }"
               />
             </span>
@@ -93,7 +94,8 @@ function dayTitle(day: ProjectionDay): string {
         <span
           v-if="inSeason !== null && !habitatOnly"
           class="rounded-full px-2.5 py-1 text-xs whitespace-nowrap"
-          :class="inSeason ? 'bg-[#d6ecd9] text-success' : 'bg-[#f2e2c4] text-[#8a5a12]'"
+          :class="inSeason ? 'bg-[#d6ecd9] text-success' : 'bg-[#c45c12] text-white'"
+          :title="seasonGate ?? undefined"
         >
           {{ inSeason ? 'En saison' : 'Hors saison' }}
         </span>
@@ -114,6 +116,12 @@ function dayTitle(day: ProjectionDay): string {
           <Button.Content>{{ controlsOpen ? 'Fermer' : 'Filtres' }}</Button.Content>
         </Button.Root>
       </div>
+      <p
+        v-if="inSeason === false && !habitatOnly && seasonGate"
+        class="border-t border-[#e4c9a0] bg-[#fbf3e4] px-2.5 py-1.5 text-[0.72rem] leading-snug text-[#8a5a12]"
+      >
+        {{ seasonGate }}
+      </p>
       <div
         v-if="!habitatOnly && (projection || loadingProjection)"
         class="border-t border-[#d9d0bc] px-2.5 py-1.5"
@@ -138,14 +146,14 @@ function dayTitle(day: ProjectionDay): string {
             >{{ day.label }}</span>
             <strong
               class="mt-0.5 text-[0.82rem] leading-none tabular-nums"
-              :style="{ color: projectionScoreColor(day.best) }"
+              :style="{ color: scoreInk(day.best) }"
             >{{ roundedScore(day.best) ?? '—' }}</strong>
             <span class="mt-1 h-1 w-[80%] overflow-hidden rounded-full bg-[#e4dccb]">
               <span
                 class="block h-full rounded-full"
                 :style="{
                   width: `${projectionMeterPercent(day.best)}%`,
-                  background: projectionScoreColor(day.best),
+                  background: scoreInk(day.best),
                 }"
               />
             </span>

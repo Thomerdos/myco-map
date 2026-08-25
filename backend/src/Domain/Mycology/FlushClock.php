@@ -15,12 +15,16 @@ use App\Domain\Weather\WeatherConditions;
  */
 final readonly class FlushClock
 {
+    /** Phenology multiplier when a flush window meets a dry 3–9 cm profile and little rain since the spell. */
+    public const POST_STORM_DRYING_FACTOR = 0.40;
+
     /**
      * @return array{min: int, peak: int, max: int, persist: int}
      */
-    public static function timetable(Species $species, WeatherConditions $weather): array
+    public static function timetable(Species $species, WeatherConditions $weather, ?float $temperature = null): array
     {
-        $factor = max(0.82, min(1.40, 1.0 + (13.0 - $weather->meanTemperatureCelsius) / 28.0));
+        $celsius = $temperature ?? $weather->meanTemperatureCelsius;
+        $factor = max(0.82, min(1.40, 1.0 + (13.0 - $celsius) / 28.0));
 
         $min = max(3, (int) round($species->flushDelayMinDays * $factor));
         $peak = max($min + 1, (int) round($species->flushDelayPeakDays * $factor));
@@ -40,11 +44,15 @@ final readonly class FlushClock
                 continue;
             }
             $any = true;
-            $best = max($best, self::curve($species, $weather, $spell['daysSince']));
+            $best = max($best, self::curve($species, $weather, $spell['daysSince'], self::spellTemperature($spell)));
         }
 
         if (!$any) {
             return $weather->fortnightRainMillimetres >= 20.0 ? 22.0 : 10.0;
+        }
+
+        if (self::flushAbortedByDrying($species, $weather)) {
+            $best *= self::POST_STORM_DRYING_FACTOR;
         }
 
         return $best;
@@ -53,7 +61,7 @@ final readonly class FlushClock
     /**
      * Spell that currently contributes the most to fruiting (not necessarily the last rain).
      *
-     * @return array{daysSince: int, millimetres: float, phenology: float, phase: string}|null
+     * @return array{daysSince: int, millimetres: float, phenology: float, phase: string, rainAfter: float, temperature: ?float}|null
      */
     public static function leadingSpell(Species $species, WeatherConditions $weather): ?array
     {
@@ -63,13 +71,16 @@ final readonly class FlushClock
             if ($spell['millimetres'] < 15.0) {
                 continue;
             }
-            $value = self::curve($species, $weather, $spell['daysSince']);
+            $temperature = self::spellTemperature($spell);
+            $value = self::curve($species, $weather, $spell['daysSince'], $temperature);
             if ($leading === null || $value > $leading['phenology']) {
                 $leading = [
                     'daysSince' => $spell['daysSince'],
                     'millimetres' => $spell['millimetres'],
                     'phenology' => $value,
-                    'phase' => self::phase($species, $weather, $spell['daysSince']),
+                    'phase' => self::phase($species, $weather, $spell['daysSince'], $temperature),
+                    'rainAfter' => (float) ($spell['rainAfter'] ?? $weather->rainSinceSoakingMillimetres),
+                    'temperature' => $temperature,
                 ];
             }
         }
@@ -77,14 +88,31 @@ final readonly class FlushClock
         return $leading;
     }
 
+    public static function flushAbortedByDrying(Species $species, WeatherConditions $weather): bool
+    {
+        $leading = self::leadingSpell($species, $weather);
+        if ($leading === null) {
+            return false;
+        }
+        if (!\in_array($leading['phase'], ['starting', 'peak', 'declining', 'lingering'], true)) {
+            return false;
+        }
+
+        return $weather->driedOutAfterSoaking($leading['rainAfter']);
+    }
+
     public static function label(Species $species, WeatherConditions $weather, \DateTimeImmutable $asOf): string
     {
+        if (self::flushAbortedByDrying($species, $weather)) {
+            return 'Assèchement trop rapide — pousse compromise';
+        }
+
         $leading = self::leadingSpell($species, $weather);
         if ($leading === null) {
             return $weather->fortnightRainMillimetres < 10.0 ? 'Sec' : 'Sans pluie déclenchante claire';
         }
 
-        $times = self::timetable($species, $weather);
+        $times = self::timetable($species, $weather, $leading['temperature']);
         $name = lcfirst($species->commonName);
         $since = $leading['daysSince'];
 
@@ -125,6 +153,7 @@ final readonly class FlushClock
         $payload['flushDaysSince'] = $leading['daysSince'] ?? null;
         $payload['flushPhase'] = $leading['phase'] ?? 'none';
         $payload['flushMillimetres'] = isset($leading) ? round($leading['millimetres'], 1) : null;
+        $payload['driedOutAfterSoaking'] = self::flushAbortedByDrying($species, $weather);
 
         return $payload;
     }
@@ -132,7 +161,6 @@ final readonly class FlushClock
     public static function explain(Species $species, WeatherConditions $weather, \DateTimeImmutable $asOf): string
     {
         $leading = self::leadingSpell($species, $weather);
-        $times = self::timetable($species, $weather);
         $latest = $weather->soakingSpells()[0] ?? null;
 
         if ($leading === null) {
@@ -142,6 +170,8 @@ final readonly class FlushClock
                 $weather->meanTemperatureCelsius,
             );
         }
+
+        $times = self::timetable($species, $weather, $leading['temperature']);
 
         $since = $leading['daysSince'];
         $storm = self::frenchDay(self::afterStorm($asOf, $since, 0));
@@ -211,6 +241,14 @@ final readonly class FlushClock
             );
         }
 
+        if (self::flushAbortedByDrying($species, $weather)) {
+            $text .= sprintf(
+                ' · l\'épisode a été suivi d\'un assèchement trop rapide (%.0f mm depuis, sol 3–9 cm à %.2f)',
+                $leading['rainAfter'],
+                $weather->litterSoilMoisture,
+            );
+        }
+
         return $text;
     }
 
@@ -240,9 +278,21 @@ final readonly class FlushClock
         return sprintf('%s–%s', self::frenchDay($start), self::frenchDay($end));
     }
 
-    private static function curve(Species $species, WeatherConditions $weather, int $days): float
+    /**
+     * @param array{daysSince: int, millimetres: float, rainAfter?: float, temperature?: float} $spell
+     */
+    private static function spellTemperature(array $spell): ?float
     {
-        $times = self::timetable($species, $weather);
+        if (!isset($spell['temperature']) || !is_numeric($spell['temperature'])) {
+            return null;
+        }
+
+        return (float) $spell['temperature'];
+    }
+
+    private static function curve(Species $species, WeatherConditions $weather, int $days, ?float $temperature = null): float
+    {
+        $times = self::timetable($species, $weather, $temperature);
         $min = $times['min'];
         $peak = $times['peak'];
         $max = $times['max'];
@@ -267,9 +317,9 @@ final readonly class FlushClock
         return max(12.0, 60.0 - ($days - $max - $persist) * 4.0);
     }
 
-    private static function phase(Species $species, WeatherConditions $weather, int $days): string
+    private static function phase(Species $species, WeatherConditions $weather, int $days, ?float $temperature = null): string
     {
-        $times = self::timetable($species, $weather);
+        $times = self::timetable($species, $weather, $temperature);
 
         return match (true) {
             $days < $times['min'] => 'incubating',

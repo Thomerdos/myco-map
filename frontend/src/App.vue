@@ -21,7 +21,7 @@ const projectionDate = ref('')
 const opacity = ref(0.72)
 const showContours = ref(false)
 const showSpots = ref(true)
-const accessibleOnly = ref(true)
+const accessibleOnly = ref(false)
 const basemap = ref('topo')
 const selectedPoint = ref<{ lat: number; lng: number } | null>(null)
 const detailOpen = ref(false)
@@ -236,6 +236,7 @@ const controlPanelProps = computed(() => ({
       :show-spots="showSpots"
       :basemap="basemap"
       :selected="selectedPoint"
+      :access-walk="report?.accessWalk ?? null"
       @viewport-changed="onViewportChanged"
       @location-picked="onLocationPicked"
     />
@@ -250,6 +251,7 @@ const controlPanelProps = computed(() => ({
         :controls-open="controlsOpen"
         :weather-label="weatherChip?.label ?? null"
         :in-season="grid?.species && !habitatOnly ? grid.species.inSeason : null"
+        :season-gate="grid?.species && !habitatOnly ? (grid.species.seasonGate ?? null) : null"
         :projection="projection"
         :projection-date="projectionDate"
         @update:projection-date="onProjectionDateChange"
@@ -299,6 +301,7 @@ const controlPanelProps = computed(() => ({
             :habitat-only="habitatOnly"
             :loading="loadingReport"
             @highlight-picked="onLocationPicked"
+            @update:projection-date="onProjectionDateChange"
           />
         </aside>
 
@@ -353,6 +356,7 @@ const controlPanelProps = computed(() => ({
           :habitat-only="habitatOnly"
           :loading="loadingReport"
           @highlight-picked="onLocationPicked"
+          @update:projection-date="onProjectionDateChange"
         />
       </Dialog.Content>
     </Dialog.Root>

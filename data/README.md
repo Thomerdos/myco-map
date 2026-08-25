@@ -15,7 +15,9 @@
 | | Un précalcul avec BD Forêt V2 (voir le README principal) remplit les bits d'essence et de densité, beaucoup plus fiables que le seul repli OSM. |
 | `edge_distance` | Distance signée à la lisière, positive dans le boisement |
 | `water_distance` | Distance au cours d'eau le plus proche |
-| `access_distance` | Marche le long des chemins OSM depuis un parking / piste carrossable (budget 1,5 km), plus 150 m d'approche. 9999 = hors d'atteinte |
+| `access_distance` | Marche depuis un parking OSM ou une route à fond blanc (`tertiary` / `unclassified` / `residential`), le long des chemins (budget 2 km), plus 500 m d'approche. Les pistes `track` ne sont pas un départ voiture. 9999 = hors d'atteinte |
+| `park`, `path` | Masques 0/1 du réseau d'accès (route/parking vs sentier), utilisés pour reconstruire le tracé au clic |
+| `canopy_cover` | Taux de couvert arboré 0–100 (Copernicus TCD). NULL si le raster n'a pas été ingéré (`./dev.sh tcd`) : le score retombe alors sur les bits FO/FF de `cover`. |
 | `grid_definition` | Emprise, taille de maille, dimensions, date de calcul |
 
 Emprise : 44,72–45,45 N et 5,38–6,30 E. Grille de **1 446 × 1 625** mailles de **50 m**.
@@ -28,6 +30,7 @@ La configuration (`app.area.cell_size`) est passée à 50 m. L'archive `myco-ter
 
 ```bash
 ./dev.sh precompute      # + BD Forêt si disponible (./dev.sh bdforet)
+                         # + TCD Copernicus si disponible (./dev.sh tcd)
 ./dev.sh export-data     # publie data/myco-terrain-50m.sqlite.gz
 ```
 
@@ -72,4 +75,4 @@ Comptez davantage de temps qu'à 100 m (~4× de mailles) : tuiles de relief et r
 
 ## Licence
 
-Cette base est une **base de données dérivée d'OpenStreetMap** (et éventuellement de BD Forêt sous Licence Ouverte), donc placée sous [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) pour la part OSM, comme détaillé dans [`../ATTRIBUTION.md`](../ATTRIBUTION.md). Toute redistribution doit conserver cette licence et créditer les contributeurs d'OpenStreetMap.
+Cette base est une **base de données dérivée d'OpenStreetMap** (et éventuellement de BD Forêt sous Licence Ouverte et de Copernicus TCD), donc placée sous [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) pour la part OSM, comme détaillé dans [`../ATTRIBUTION.md`](../ATTRIBUTION.md). Toute redistribution doit conserver cette licence et créditer les contributeurs d'OpenStreetMap.

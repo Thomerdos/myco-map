@@ -6,13 +6,16 @@ namespace App\Domain\Mycology;
 
 /**
  * Season standing for a species at a given date. Computed once per request rather
- * than per cell, since it does not vary across the map.
+ * than per cell, since it does not vary across the map. It is a gate (cap + badge),
+ * not a weighted criterion.
  */
 final readonly class SeasonAssessment
 {
+    /** Moment-mode ceiling when the date is outside every harvest window. */
+    public const OUT_OF_SEASON_CAP = 38.0;
+
     public ?HarvestWindow $activeWindow;
     public ?HarvestWindow $nextWindow;
-    public CriterionScore $criterionScore;
 
     public function __construct(
         public Species $species,
@@ -20,7 +23,6 @@ final readonly class SeasonAssessment
     ) {
         $this->activeWindow = $species->activeWindow($date);
         $this->nextWindow = $this->activeWindow === null ? $this->findNextWindow() : null;
-        $this->criterionScore = $this->buildCriterionScore();
     }
 
     public function isInSeason(): bool
@@ -28,25 +30,24 @@ final readonly class SeasonAssessment
         return $this->activeWindow !== null;
     }
 
-    private function buildCriterionScore(): CriterionScore
+    /**
+     * Status line for the UI: in season vs capped out of season. French, user-facing.
+     */
+    public function gateMessage(): string
     {
+        $cap = (int) self::OUT_OF_SEASON_CAP;
+
         if ($this->activeWindow === null) {
-            return new CriterionScore(
-                Criterion::Season,
-                10.0,
-                $this->nextWindow !== null
-                    ? sprintf('Hors saison — prochaine fenêtre : %s', $this->nextWindow->label)
-                    : 'Hors saison pour cette espèce',
-            );
+            $base = sprintf('Hors saison — score plafonné à %d', $cap);
+
+            return $this->nextWindow !== null
+                ? sprintf('%s. Prochaine fenêtre : %s', $base, $this->nextWindow->label)
+                : $base;
         }
 
-        return new CriterionScore(
-            Criterion::Season,
-            $this->activeWindow->isPeak ? 100.0 : 70.0,
-            $this->activeWindow->isPeak
-                ? sprintf('En pleine saison : %s', $this->activeWindow->label)
-                : sprintf('Saison secondaire : %s', $this->activeWindow->label),
-        );
+        return $this->activeWindow->isPeak
+            ? sprintf('En saison : %s', $this->activeWindow->label)
+            : sprintf('Saison secondaire : %s', $this->activeWindow->label);
     }
 
     private function findNextWindow(): ?HarvestWindow
