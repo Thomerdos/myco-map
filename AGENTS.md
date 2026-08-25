@@ -7,7 +7,9 @@ Notes de travail pour les agents (et les humains) qui interviennent sur ce dép�
 - **Langue** : tout ce qui est visible par l'utilisateur (libellés, explications, messages de commit, README) est en **français**. Les commentaires de code sont en **anglais**.
 - **Backend** : Symfony 7 / PHP 8.4, domaine sans dépendance à l'infrastructure (`backend/src/Domain`), adaptateurs dans `backend/src/Infrastructure`.
 - **Frontend** : Vue 3 + Vite + Leaflet, TypeScript strict. Police unique : Inter.
-- **Installation** : Docker Compose (image `php:8.4-cli`). Le code est monté en volume.
+- **Installation** : Docker Compose uniquement (PHP 8.4, Node, et les scripts
+  `bdforet` / `geologie` / `tcd` / `precompute` via images Docker). Rien à installer
+  sur l'hôte hors Docker.
 - **Emprise** : `app.area.*` dans `backend/config/services.yaml` (Grenoble par défaut). Toute
   autre région : mêmes clés + recopier les bornes dans `scripts/fetch_tcd.py`, **ne pas**
   restaurer l'archive grenobloise, télécharger BD Forêt / Charm-50 / TCD de *cette* emprise,

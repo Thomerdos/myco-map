@@ -25,6 +25,84 @@ ensure_env() {
   fi
 }
 
+TOOLS_IMAGE="${MYCO_TOOLS_IMAGE:-myco-map-tools:local}"
+GDAL_IMAGE="${MYCO_GDAL_IMAGE:-ghcr.io/osgeo/gdal:ubuntu-small-latest}"
+# Match host UID so var/ files written by containers stay deletable without sudo.
+DOCKER_USER="$(id -u):$(id -g)"
+
+require_docker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Docker est requis. Installez-le : https://docs.docker.com/get-docker/" >&2
+    exit 1
+  fi
+}
+
+ensure_tools_image() {
+  require_docker
+  if docker image inspect "${TOOLS_IMAGE}" >/dev/null 2>&1; then
+    return
+  fi
+  echo "Construction de l'image d'outils Python (${TOOLS_IMAGE})…"
+  docker build -t "${TOOLS_IMAGE}" -f "${ROOT}/scripts/Dockerfile.tools" "${ROOT}/scripts"
+}
+
+# Repo mounted at /work. Arguments are the command run inside the container.
+docker_tools() {
+  ensure_tools_image
+  docker run --rm --user "${DOCKER_USER}" -v "${ROOT}:/work" -w /work "${TOOLS_IMAGE}" "$@"
+}
+
+# Usage: docker_gdal [docker run options…] -- command [args…]
+# Options must be separated from the command by "--" so the image name is not mistaken
+# for an argument (e.g. "python3").
+docker_gdal() {
+  require_docker
+  local -a opts=(--user "${DOCKER_USER}")
+  while [[ $# -gt 0 && "$1" != "--" ]]; do
+    opts+=("$1")
+    shift
+  done
+  if [[ "${1:-}" != "--" ]]; then
+    echo "docker_gdal: séparez les options Docker de la commande avec --" >&2
+    exit 1
+  fi
+  shift
+  docker run --rm "${opts[@]}" "${GDAL_IMAGE}" "$@"
+}
+
+# Extract .7z/.zip into $2 using Alpine (no host p7zip/unzip).
+# Resolves symlinks so archives living outside the repo (via a link) still mount.
+extract_archive_docker() {
+  local source="$1"
+  local dest="$2"
+  local real parent base
+  real="$(realpath "${source}")"
+  parent="$(dirname "${real}")"
+  base="$(basename "${real}")"
+  require_docker
+  mkdir -p "${dest}"
+  # apk needs root; chown so the host user can delete extracts later.
+  docker run --rm \
+    -v "${parent}:/in:ro" \
+    -v "${dest}:/out" \
+    alpine:3.20 \
+    sh -c "apk add --no-cache p7zip unzip >/dev/null && case \"${base}\" in *.zip|*.ZIP) unzip -q -o \"/in/${base}\" -d /out ;; *) 7z x -y -o/out \"/in/${base}\" >/dev/null ;; esac && chown -R ${DOCKER_USER} /out"
+}
+
+# Remove a path that may contain root-owned files left by older container runs.
+docker_rm_rf() {
+  local path="$1"
+  [[ -e "${path}" ]] || return 0
+  if rm -rf "${path}" 2>/dev/null; then
+    return 0
+  fi
+  require_docker
+  local parent base
+  parent="$(cd "$(dirname "${path}")" && pwd)"
+  base="$(basename "${path}")"
+  docker run --rm -v "${parent}:/target" alpine:3.20 rm -rf "/target/${base}"
+}
+
 install_all() {
   require_composer
   ensure_env
@@ -34,17 +112,13 @@ install_all() {
 
 precompute() {
   ensure_env
-  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    echo "Précalcul via Docker (PHP 8.4)."
-    (cd "${ROOT}" && docker compose run --rm --no-deps backend php bin/console app:precompute "$@")
-    return
+  require_docker
+  if ! docker compose version >/dev/null 2>&1; then
+    echo "Docker Compose v2 est requis pour le précalcul." >&2
+    exit 1
   fi
-  if php -m 2>/dev/null | grep -qi '^pdo_sqlite$'; then
-    (cd "${ROOT}/backend" && php bin/console app:precompute "$@")
-    return
-  fi
-  echo "Docker (recommandé) ou php-sqlite3 est requis pour le précalcul." >&2
-  exit 1
+  echo "Précalcul via Docker (PHP 8.4)."
+  (cd "${ROOT}" && docker compose run --rm --no-deps backend php bin/console app:precompute "$@")
 }
 
 restore_data() {
@@ -106,24 +180,7 @@ bdforet() {
     exit 1
   fi
 
-  local ogr2ogr_cmd=()
-  if command -v ogr2ogr >/dev/null 2>&1; then
-    ogr2ogr_cmd=(ogr2ogr)
-  elif command -v docker >/dev/null 2>&1; then
-    echo "ogr2ogr local introuvable — utilisation de l'image osgeo/gdal."
-    ogr2ogr_cmd=(
-      docker run --rm
-      -v "${ROOT}/backend/var/bdforet:/bdforet"
-      ghcr.io/osgeo/gdal:ubuntu-small-latest
-      ogr2ogr
-    )
-  else
-    echo "ogr2ogr est requis pour la conversion. Installez GDAL ou Docker :" >&2
-    echo "  Debian/Ubuntu : sudo apt install gdal-bin" >&2
-    echo "  macOS         : brew install gdal" >&2
-    exit 1
-  fi
-
+  require_docker
   mkdir -p "$(dirname "${target}")" "${extract_root}"
   rm -f "${target}"
 
@@ -136,30 +193,12 @@ bdforet() {
 
     case "${source}" in
       *.7z|*.zip|*.ZIP)
-        local archive_name
+        local archive_name dest found
         archive_name="$(basename "${source}")"
-        local dest="${extract_root}/${archive_name%.*}"
+        dest="${extract_root}/${archive_name%.*}"
         echo "Extraction de ${source}…"
         rm -rf "${dest}"
-        mkdir -p "${dest}"
-        if command -v 7z >/dev/null 2>&1; then
-          7z x -y -o"${dest}" "${source}" >/dev/null
-        elif command -v 7za >/dev/null 2>&1; then
-          7za x -y -o"${dest}" "${source}" >/dev/null
-        elif [[ "${source}" == *.zip || "${source}" == *.ZIP ]]; then
-          unzip -q -o "${source}" -d "${dest}"
-        elif command -v docker >/dev/null 2>&1; then
-          docker run --rm \
-            -v "$(cd "$(dirname "${source}")" && pwd)":/in:ro \
-            -v "${dest}":/out \
-            alpine:3.20 \
-            sh -c "apk add --no-cache p7zip >/dev/null && 7z x -y -o/out \"/in/$(basename "${source}")\" >/dev/null"
-        else
-          echo "p7zip (7z) est requis pour extraire ${source}." >&2
-          echo "  Debian/Ubuntu : sudo apt install p7zip-full" >&2
-          exit 1
-        fi
-        local found
+        extract_archive_docker "${source}" "${dest}"
         found="$(find "${dest}" -type f -iname 'FORMATION_VEGETALE.shp' | head -n 1 || true)"
         if [[ -z "${found}" ]]; then
           echo "FORMATION_VEGETALE.shp introuvable dans ${source}" >&2
@@ -168,40 +207,37 @@ bdforet() {
         shapefiles+=("${found}")
         ;;
       *)
-        shapefiles+=("${source}")
+        # Copy under backend/var/bdforet so the GDAL container can see it.
+        if [[ "${source}" != "${ROOT}/backend/var/bdforet/"* ]]; then
+          mkdir -p "${ROOT}/backend/var/bdforet/inputs"
+          cp -a "${source}" "${ROOT}/backend/var/bdforet/inputs/"
+          shapefiles+=("${ROOT}/backend/var/bdforet/inputs/$(basename "${source}")")
+        else
+          shapefiles+=("${source}")
+        fi
         ;;
     esac
   done
 
-  local shp
+  local shp rel_shp
   for shp in "${shapefiles[@]}"; do
     echo "Conversion de ${shp}…"
-    if [[ "${ogr2ogr_cmd[0]}" == docker ]]; then
-      # Paths inside the container are under /bdforet (mounted from backend/var/bdforet).
-      local rel_shp="${shp#"${ROOT}/backend/var/bdforet/"}"
-      local rel_target="formation-vegetale.geojsonl"
-      if [[ "${shp}" == "${rel_shp}" ]]; then
-        echo "Le shapefile doit être sous backend/var/bdforet/ pour la conversion Docker." >&2
-        echo "Passez l'archive .7z/.zip, ou installez gdal-bin localement." >&2
-        exit 1
-      fi
-      docker run --rm \
-        -v "${ROOT}/backend/var/bdforet:/bdforet" \
-        ghcr.io/osgeo/gdal:ubuntu-small-latest \
-        ogr2ogr -f GeoJSONSeq -append -t_srs EPSG:4326 \
-          -select CODE_TFV \
-          -nlt PROMOTE_TO_MULTI \
-          "/bdforet/${rel_target}" "/bdforet/${rel_shp}"
-    else
+    rel_shp="${shp#"${ROOT}/backend/var/bdforet/"}"
+    if [[ "${shp}" == "${rel_shp}" ]]; then
+      echo "Le shapefile doit être sous backend/var/bdforet/ pour la conversion Docker." >&2
+      exit 1
+    fi
+    docker_gdal \
+      -v "${ROOT}/backend/var/bdforet:/bdforet" \
+      -- \
       ogr2ogr -f GeoJSONSeq -append -t_srs EPSG:4326 \
         -select CODE_TFV \
         -nlt PROMOTE_TO_MULTI \
-        "${target}" "${shp}"
-    fi
+        /bdforet/formation-vegetale.geojsonl "/bdforet/${rel_shp}"
   done
 
   echo "BD Forêt prête : ${target} ($(du -h "${target}" | cut -f1), $(wc -l < "${target}") polygones)"
-  echo "Relancez ./dev.sh precompute (ou docker compose + precompute) pour reconstruire la base avec ce couvert."
+  echo "Relancez ./dev.sh precompute pour reconstruire la base avec ce couvert."
 }
 
 backend() {
@@ -234,10 +270,15 @@ docker_up() {
 
 # Converts BRGM Charm-50 S_FGEOL shapefiles (Lambert-93 ZIPs) to WGS84 GeoJSONL
 # with a classified substrate code for the geology criterion.
+# Inputs are staged under backend/var/geologie/_inputs so Docker sees real files even
+# when source/ is a symlink to a folder outside the repo (bind mounts do not follow
+# absolute symlinks that leave the mounted tree).
 geologie() {
   local target="${ROOT}/backend/var/geologie/formations.geojsonl"
   local source_dir="${ROOT}/backend/var/geologie/source"
+  local staging="${ROOT}/backend/var/geologie/_inputs"
   local -a inputs=()
+  local -a container_inputs=()
 
   if [[ $# -gt 0 ]]; then
     inputs=("$@")
@@ -251,127 +292,108 @@ geologie() {
     echo "Usage: ./dev.sh geologie [GEO050K_HARM_0xx.zip…]" >&2
     echo >&2
     echo "Placez les ZIP Charm-50 (Isère, Drôme, Savoie…) dans backend/var/geologie/source/" >&2
-    echo "ou passez leurs chemins en arguments." >&2
+    echo "(ce dossier peut être un lien symbolique) ou passez leurs chemins en arguments." >&2
     echo "Téléchargement : http://infoterre.brgm.fr/telechargements/BDCharm50/" >&2
     exit 1
   fi
 
+  require_docker
   mkdir -p "$(dirname "${target}")"
-  python3 "${ROOT}/scripts/convert_brgm_geologie.py" "${target}" "${inputs[@]}"
-  echo "Relancez ./dev.sh precompute (ou docker compose exec backend …) pour intégrer le substrat."
+  if [[ ! -e "${source_dir}" ]]; then
+    mkdir -p "${source_dir}"
+  fi
+  docker_rm_rf "${staging}"
+  mkdir -p "${staging}"
+
+  local input real base
+  for input in "${inputs[@]}"; do
+    if [[ ! -e "${input}" ]]; then
+      echo "Introuvable : ${input}" >&2
+      exit 1
+    fi
+    real="$(realpath "${input}")"
+    base="$(basename "${real}")"
+    # Hardlink when possible (same filesystem); otherwise copy.
+    ln "${real}" "${staging}/${base}" 2>/dev/null || cp -a "${real}" "${staging}/${base}"
+    container_inputs+=("/work/backend/var/geologie/_inputs/${base}")
+  done
+
+  echo "Conversion Charm-50 via Docker…"
+  docker_tools python3 scripts/convert_brgm_geologie.py \
+    /work/backend/var/geologie/formations.geojsonl \
+    "${container_inputs[@]}"
+  # Staging was only for the Docker bind mount (and shapefile extracts beside the ZIPs).
+  docker_rm_rf "${staging}"
+  echo "Relancez ./dev.sh precompute pour intégrer le substrat."
 }
 
 # Downloads Copernicus HRL Tree Cover Density via CDSE OData (or converts local GeoTIFFs)
-# onto the 50 m study lattice.
+# onto the 50 m study lattice. Host needs only Docker (+ CDSE credentials in the env).
 tcd() {
   local prefix="${ROOT}/backend/var/tcd/canopy-cover"
   local source_dir="${ROOT}/backend/var/tcd/source"
-  local manifest=""
-  local -a sources=()
+  local staging="${ROOT}/backend/var/tcd/_inputs"
+  local -a docker_args=(/tcd/canopy-cover)
+
+  require_docker
+  mkdir -p "${source_dir}" "$(dirname "${prefix}")"
 
   if [[ $# -eq 0 ]]; then
-    python3 "${ROOT}/scripts/fetch_tcd.py" "${source_dir}"
-    manifest="${source_dir}/manifest.json"
-    if [[ ! -f "${manifest}" ]]; then
+    if [[ -z "${CDSE_USERNAME:-}${CDSE_PASSWORD:-}${CDSE_REFRESH_TOKEN:-}" ]]; then
+      echo "Compte Copernicus Data Space requis pour le téléchargement." >&2
+      echo "Exportez CDSE_USERNAME et CDSE_PASSWORD (ou CDSE_REFRESH_TOKEN), puis relancez." >&2
+      echo "Inscription : https://dataspace.copernicus.eu" >&2
+      exit 1
+    fi
+    echo "Téléchargement TCD via Docker…"
+    local -a env_flags=(-e CDSE_USERNAME -e CDSE_PASSWORD -e CDSE_REFRESH_TOKEN)
+    if [[ -n "${TCD_YEAR:-}" ]]; then
+      env_flags+=(-e TCD_YEAR)
+    fi
+    ensure_tools_image
+    docker run --rm --user "${DOCKER_USER}" \
+      -v "${ROOT}:/work" \
+      -w /work \
+      "${env_flags[@]}" \
+      "${TOOLS_IMAGE}" \
+      python3 scripts/fetch_tcd.py /work/backend/var/tcd/source
+    if [[ ! -f "${source_dir}/manifest.json" ]]; then
       echo "Téléchargement TCD incomplet (manifeste absent)." >&2
       exit 1
     fi
+    docker_args+=(--manifest /tcd/source/manifest.json)
   else
-    sources=("$@")
+    docker_rm_rf "${staging}"
+    mkdir -p "${staging}"
     local source
-    for source in "${sources[@]}"; do
+    for source in "$@"; do
       if [[ ! -f "${source}" ]]; then
         echo "Introuvable : ${source}" >&2
         echo >&2
         echo "Sans argument, ./dev.sh tcd télécharge les tuiles 10 m via l'API OData" >&2
-        echo "Copernicus Data Space (compte sur https://dataspace.copernicus.eu," >&2
-        echo "variables CDSE_USERNAME / CDSE_PASSWORD ou CDSE_REFRESH_TOKEN)." >&2
+        echo "Copernicus Data Space (CDSE_USERNAME / CDSE_PASSWORD ou CDSE_REFRESH_TOKEN)." >&2
         exit 1
       fi
+      ln "${source}" "${staging}/$(basename "${source}")" 2>/dev/null \
+        || cp "${source}" "${staging}/$(basename "${source}")"
+      docker_args+=("/tcd/_inputs/$(basename "${source}")")
     done
-    local sibling
-    sibling="$(cd "$(dirname "${sources[0]}")" && pwd)/manifest.json"
-    if [[ -f "${sibling}" ]]; then
-      manifest="${sibling}"
+    if [[ -f "$(cd "$(dirname "${1}")" && pwd)/manifest.json" ]]; then
+      cp "$(cd "$(dirname "${1}")" && pwd)/manifest.json" "${staging}/manifest.json"
+      docker_args+=(--manifest /tcd/_inputs/manifest.json)
     fi
   fi
 
-  mkdir -p "$(dirname "${prefix}")"
-  convert_tcd "${prefix}" "${manifest}" "${sources[@]}"
-  echo "Relancez ./dev.sh precompute pour écrire la colonne canopy_cover."
-}
-
-convert_tcd() {
-  local prefix="$1"
-  local manifest="$2"
-  shift 2
-  local -a sources=("$@")
-  local -a extra=()
-  if [[ -n "${manifest}" ]]; then
-    extra+=(--manifest "${manifest}")
-  fi
-
-  if command -v gdalwarp >/dev/null 2>&1; then
-    python3 "${ROOT}/scripts/convert_tcd.py" "${prefix}" "${extra[@]}" "${sources[@]}"
-    return
-  fi
-
-  if ! command -v docker >/dev/null 2>&1; then
-    echo "gdalwarp est requis pour la conversion. Installez GDAL ou Docker :" >&2
-    echo "  Debian/Ubuntu : sudo apt install gdal-bin python3-gdal" >&2
-    echo "  macOS         : brew install gdal" >&2
-    exit 1
-  fi
-
-  echo "gdalwarp local introuvable — utilisation de l'image osgeo/gdal."
-  local staging="${ROOT}/backend/var/tcd/_inputs"
-  rm -rf "${staging}"
-  mkdir -p "${staging}"
-  local src
-  for src in "${sources[@]}"; do
-    ln "${src}" "${staging}/$(basename "${src}")" 2>/dev/null || cp "${src}" "${staging}/$(basename "${src}")"
-  done
-  local -a docker_args=(/tcd/canopy-cover)
-  if [[ -n "${manifest}" ]]; then
-    python3 - "${manifest}" "${staging}/manifest.json" <<'PY'
-from pathlib import Path
-import json
-import shutil
-import sys
-
-src, dest = Path(sys.argv[1]), Path(sys.argv[2])
-payload = json.loads(src.read_text(encoding="utf-8"))
-parent = src.parent
-for product in payload.get("products") or []:
-    name = product.get("path") or product.get("name")
-    if not name:
-        continue
-    tile = Path(name)
-    if not tile.is_absolute():
-        tile = parent / tile
-    if not tile.suffix:
-        tile = tile.with_suffix(".tif")
-    if not tile.is_file():
-        continue
-    target = dest.parent / tile.name
-    if not target.exists():
-        try:
-            target.hardlink_to(tile)
-        except OSError:
-            shutil.copy2(tile, target)
-    product["path"] = tile.name
-dest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-PY
-    docker_args+=(--manifest /tcd/_inputs/manifest.json)
-  fi
-  for src in "${sources[@]}"; do
-    docker_args+=("/tcd/_inputs/$(basename "${src}")")
-  done
-  docker run --rm \
+  echo "Recadrage TCD via Docker (GDAL)…"
+  # Old runs may have left root-owned outputs; remove so --user can rewrite them.
+  docker_rm_rf "${prefix}.bin"
+  docker_rm_rf "${prefix}.json"
+  docker_gdal \
     -v "${ROOT}/scripts:/scripts:ro" \
     -v "${ROOT}/backend/var/tcd:/tcd" \
-    ghcr.io/osgeo/gdal:ubuntu-small-latest \
+    -- \
     python3 /scripts/convert_tcd.py "${docker_args[@]}"
+  echo "Relancez ./dev.sh precompute pour écrire la colonne canopy_cover."
 }
 
 case "${1:-}" in
