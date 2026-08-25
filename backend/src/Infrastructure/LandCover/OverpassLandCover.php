@@ -92,9 +92,13 @@ final class OverpassLandCover implements LandCoverSource
         }
     }
 
-    public function accessWays(BoundingBox $bounds): iterable
+    public function accessWays(BoundingBox $bounds, ?BoundingBox $clip = null): iterable
     {
         foreach ($this->chunks($bounds) as $index => $chunk) {
+            if ($clip !== null && $chunk->intersect($clip) === null) {
+                continue;
+            }
+
             $elements = $this->query(
                 sprintf('access-%d', $index),
                 $this->accessQuery($chunk),
@@ -177,7 +181,7 @@ final class OverpassLandCover implements LandCoverSource
         return <<<QL
             [out:json][timeout:180];
             (
-              way["highway"~"^(primary|secondary|tertiary|unclassified|residential|living_street|service|track|path|footway|bridleway|cycleway)$"]({$bbox});
+              way["highway"~"^(primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|road|service|track|path|footway|bridleway|cycleway)$"]({$bbox});
               node["amenity"="parking"]({$bbox});
               way["amenity"="parking"]({$bbox});
             );
@@ -359,7 +363,8 @@ final class OverpassLandCover implements LandCoverSource
             return null;
         }
 
-        $isArea = $parkable && !$walkable && \count($points) >= 3;
+        $isParking = ($tags['amenity'] ?? null) === 'parking';
+        $isArea = $isParking && \count($points) >= 3;
 
         return new AccessWay($points, $parkable, $walkable, $isArea);
     }

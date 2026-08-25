@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Mycology;
 
 /**
- * Moment: full model (season + weather + habitat). Habitat: terrain only, weights
- * of the remaining criteria renormalised so they still sum to 1.0.
+ * Moment: weather + habitat, with season as a cap (not a weight). Habitat: terrain
+ * only, remaining weights renormalised so they still sum to 1.0.
  */
 enum ScoringMode: string
 {
@@ -17,7 +17,17 @@ enum ScoringMode: string
     public function criteria(): array
     {
         return match ($this) {
-            self::Moment => Criterion::cases(),
+            self::Moment => [
+                Criterion::Weather,
+                Criterion::Altitude,
+                Criterion::Exposure,
+                Criterion::Cover,
+                Criterion::StandDensity,
+                Criterion::Geology,
+                Criterion::Moisture,
+                Criterion::Edge,
+                Criterion::Slope,
+            ],
             self::Habitat => [
                 Criterion::Altitude,
                 Criterion::Exposure,

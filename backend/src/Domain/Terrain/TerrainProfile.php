@@ -26,6 +26,7 @@ final readonly class TerrainProfile
         public CanopyClosure $canopy = CanopyClosure::Unknown,
         public Substrate $substrate = Substrate::Unknown,
         public int $accessDistanceMeters = AccessThreshold::UNREACHABLE,
+        public ?int $canopyCoverPercent = null,
     ) {
     }
 

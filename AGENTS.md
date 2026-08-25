@@ -14,9 +14,9 @@ Notes de travail pour les agents (et les humains) qui interviennent sur ce dép�
 
 ## Modèle de score : pondérations et sources
 
-Le score est une somme pondérée de **dix** critères (`backend/src/Domain/Mycology/Criterion.php`),
-suivie de plafonds (`SuitabilityCalculator::applyCaps`). L'accès parking–chemin n'est **pas**
-un critère : c'est un filtre / masque (voir ci-dessous).
+Le score est une somme pondérée de **neuf** critères (`backend/src/Domain/Mycology/Criterion.php`),
+suivie de plafonds (`SuitabilityCalculator::applyCaps`). La **saison** et l'accès parking–chemin
+ne sont **pas** des poids : ce sont des garde-fous / filtres (voir ci-dessous).
 
 ### Re-challenge obligatoire des poids
 
@@ -49,18 +49,30 @@ meilleure que ~5 points sur un poids n'a pas de sens.
 
 | Critère | Poids | Appui dans la littérature | Verdict |
 |---|---|---|---|
-| Saison | 13 % | Fenêtres de fructification par espèce (définitionnel) | Cohérent |
-| Météo / rythme de pousse | 16 % | Pluie et température dans tous les modèles de rendement | Compromis spatial ; baissé pour faire de la place aux critères peuplement / substrat |
+| Météo / rythme de pousse | 16 % | Pluie et température dans tous les modèles de rendement | Compromis spatial ; uniforme sur une emprise à date fixe |
+| **Densité du peuplement** | **16 %** | Surface terrière = prédicteur stand le plus fort ; optimum ~15–20 m²/ha ([Bonet et al. 2010](https://doi.org/10.1139/x09-198)) | TCD 0–100 % (courbe en cloche) ; repli FO/FF. Reçoit une part de l'ex-poids saison pour classer les mailles |
 | Couvert forestier | 14 % | Hôte ectomycorhizien = premier contributeur MaxEnt | Bien appuyé ; densité sortie en critère séparé |
 | Altitude | 13 % | Facteur de site significatif ([Bonet et al. 2010](https://hal.science/hal-00884160v1/document)) | Bien appuyé |
 | Exposition | 13 % | Versants nord > sud ([Bonet et al. 2010](https://hal.science/hal-00884160v1/document)) | Bien appuyé |
-| **Densité du peuplement** | **10 %** | Surface terrière = prédicteur stand le plus fort ; optimum ~15–20 m²/ha ([Bonet et al. 2010](https://doi.org/10.1139/x09-198)) | Proxy FO/FF seulement — amplitude réelle sous-modélisée |
+| **Géologie / substrat** | **10 %** | Trompette / morille calcaire ; girolle plutôt acide (savoir + fiches d'espèce) | Discriminant local Chartreuse–Belledonne ; pas un pH mesuré |
 | Humidité topographique | 9 % | Humidité du sol télédétectée (r = 0,63–0,72, [Hernández-Rodríguez et al. 2020](https://doi.org/10.1016/j.agrformet.2020.108020)) | Défendable |
-| **Géologie / substrat** | **6 %** | Trompette / morille calcaire ; girolle plutôt acide (savoir + fiches d'espèce) | Discriminant local Chartreuse–Belledonne ; pas un pH mesuré |
-| Position lisière | 4 % | −65 % de richesse en lisière ([Rianhard et al. 2025](https://doi.org/10.1002/ppp3.70008)) | Sens correct ; amplitude encore sous-représentée |
+| Position lisière | 7 % | −65 % de richesse en lisière ([Rianhard et al. 2025](https://doi.org/10.1002/ppp3.70008)) | Sens correct ; poids relevé (sous-représentée à 4 %) |
 | Pente | 2 % | Effet négatif monotone ([Bonet et al. 2010](https://hal.science/hal-00884160v1/document)) | Poids plausible |
+| Saison | **0 %** | Fenêtres de fructification (définitionnel) | Garde-fou : plafond 38 hors saison + badge. Pas un poids (uniforme sur la carte) |
 
-**Somme = 100 %.** Re-challengé à l'ajout densité + géologie (priors d'expert, pas un fit sur récoltes).
+**Somme des poids = 100 %** (saison exclue). Les 13 % d'ex-poids saison vont à densité (+6),
+géologie (+4) et lisière (+3) — les leviers qui classent les mailles, pas la date.
+
+**Re-challenge saison-gate + poids (24 août 2026).** Emprise Chartreuse 45,22–45,28 N /
+5,72–5,80 E, `accessible=0`.
+
+- Cèpe `mode=habitat` : `average=61,9`, `best=91,1` ; 13 mailles ≥ 90 (0,1 %), écart-type 0,35.
+  Avant (saison encore à 13 %, densité 10 %) : 117 mailles ≥ 90, `best=92,9`. Sans TCD, plus
+  de poids sur FO/FF **resserre** le sommet au lieu de l'étaler — attendu. Relancer après
+  `./dev.sh tcd` + `precompute`.
+- Cèpe `mode=moment` (24 août, phénologie d'incubation) : tout plafonné à 48. Inchangé.
+- Morille `mode=moment` : **toutes** les mailles à 38, libellé « À éviter ». Garde-fou OK.
+- Légende / `SuitabilityLevel` **non recalés** : le 90 est plus rare, pas déplacé.
 
 **Note sur le poids météo.** Dans les modèles publiés, la météo explique l'essentiel de la
 variabilité **interannuelle**. Ici la carte est spatiale et à date fixe : la météo est quasi
@@ -83,6 +95,7 @@ La table d'audit ci-dessus fait office de référence. Les valeurs dans le code
 | Délai de pousse girolle | min 5 / pic 8 / max 13 j | Espèces à réaction rapide aux orages d'été (savoir de terrain) |
 | Seuil d'épisode déclenchant | ≥ 15 mm cumulés, jour pivot ≥ 10 mm | Calibration interne, pas de source directe |
 | Fenêtre déclenchante | J−14 → J−5 | **Plus courte que la littérature** : décalage d'un mois pour la pluie ([Karavani et al. 2018](https://www.medfor.eu/sites/default/files/editor/karavani_et_al_final.pdf)), accumulation sur 26 j ([étude 2025](https://doi.org/10.64898/2025.12.12.693895)), température minimale deux semaines plus tôt ([Martínez-Peña 2004](https://oa.upm.es/48556/1/Martinez_2004_CuadSECF.pdf)) |
+| Assèchement post-orage | &lt; 8 mm depuis l'épisode **et** sol 3–9 cm &lt; 0,18, en fenêtre de pousse | Phénologie × 0,40 (`FlushClock::POST_STORM_DRYING_FACTOR`) → retombe sous le plafond 62. Savoir de terrain (primordia qui avortent). Inverse de `brokeDrySpell` |
 
 **Libellés UI.** `FlushClock::label` / `explain` convertissent les délais (jours **après l'orage**)
 en dates calendaires (`pic vers le 25 août`), à partir du jour de projection `asOf`.
@@ -108,11 +121,18 @@ Ne pas les confondre avec le **J+n de la barre du haut** (jours à partir d'aujo
    (35 %).
 5. **Amorçage par sécheresse.** `WeatherConditions::brokeDrySpell()` détecte un épisode ≥ 20 mm
    après une quinzaine à moins de 10 mm et majore l'apport en eau de 15 %.
+6. **Assèchement après l'orage.** Si la phénologie est en fenêtre de pousse mais qu'il est tombé
+   moins de 8 mm depuis l'épisode **et** que le sol 3–9 cm est sous 0,18 m³/m³, la phénologie
+   est multipliée par 0,40 (plafond 62). L'orage dans le cumul 26 j ne suffit plus.
+   Re-challenge Chartreuse 24 août 2026, cèpe : sol 3–9 cm à 0,26, orage du 21 août encore
+   en incubation → pas d'abort. `average` / `best` habitat inchangés ; légende non recalée.
 
 ### Restantes
 
-1. **Surface terrière encore proxy.** Le critère « Densité du peuplement » lit `CanopyClosure`
-   (FO/FF). Pas de m²/ha mesurés. Piste : NDVI Sentinel-2 ou inventaire.
+1. **Surface terrière encore proxy.** Le critère « Densité du peuplement » lit Copernicus
+   TCD (0–100 %) quand le raster est là, sinon FO/FF. Ce n'est pas des m²/ha mesurés.
+   Piste suivante : LIDAR HD IGN (hauteur de canopée). Le NDVI Sentinel-2 sature dans les
+   hêtraies/pessières fermées — ne pas en faire la source nominale.
 2. **pH réel absent.** La géologie Charm-50 donne un substrat calcaire / siliceux / mixte, pas
    un pH de sol.
 3. **Délais de pousse par espèce non sourcés en revue à comité de lecture.** Voir la note en fin
@@ -124,6 +144,28 @@ Source : formations `*_S_FGEOL_2154` des départements 26 / 38 / 73, converties 
 `./dev.sh geologie` vers `backend/var/geologie/formations.geojsonl`. Classification par mots-clés
 sur `DESCR` → `Substrate` (calcaire, siliceux, marneux/mixte, indéterminé). Colonne SQLite
 `geology`. Masque « Géologie / substrat ».
+
+## Densité du peuplement (Copernicus TCD)
+
+Remplace le proxy FO/FF du critère densité (16 %), **sans 11ᵉ critère**. Courbe **non monotone**
+par espèce (`CanopyDensityBand`) : optimum vers un couvert intermédiaire, pas le plus fermé
+(rendement ~15–20 m²/ha, [Bonet et al. 2010](https://doi.org/10.1139/x09-198)).
+
+| | TCD Copernicus | Repli FO/FF |
+|---|---|---|
+| Déclenchement | `backend/var/tcd/canopy-cover.json` + `.bin` (`./dev.sh tcd`, ou `TCD_PATH`) | raster absent |
+| Valeur | 0–100 % au centre de maille 50 m | FO ≈ 25 %, FF ≈ 70 %, inconnu → non peint |
+| Licence | Copernicus (accès libre, compte CDSE) | bits 7–8 de `StandCode` |
+
+`./dev.sh tcd` sans argument interroge le catalogue [OData CDSE](https://documentation.dataspace.copernicus.eu/APIs/OData.html)
+(`datasetIdentifier` = `clms_vlcc_tree-cover-density_europe_10m_yearly_v1`), télécharge les tuiles
+10 m de la dernière année (`TCD_YEAR` pour figer) qui intersectent l'emprise, puis recale sur la
+grille 50 m. Auth : `CDSE_USERNAME` / `CDSE_PASSWORD` ou `CDSE_REFRESH_TOKEN` (compte
+[dataspace.copernicus.eu](https://dataspace.copernicus.eu)). Tuiles dans `backend/var/tcd/source/`.
+Un chemin `.tif` en argument reste possible hors-ligne.
+
+Cache local, **jamais commité** (comme BD Forêt). Colonne SQLite `canopy_cover` (NULL = inconnu).
+Les 2 bits FO/FF de `StandCode` restent pour le repli. Masque « Densité du peuplement » continu.
 
 ## Précision du couvert forestier
 
@@ -163,8 +205,8 @@ nouveau (surtout avec BD Forêt) remplit les bits hauts. La couche « Couvert »
 continue de colorier uniquement la classe 0–4.
 
 `Species::coverSuitability()` combine : affinité feuillu/conifère/mixte (repli) ; affinité
-d'essence quand elle est connue ; modificateur de densité (fermé un peu mieux pour les
-espèces ectomycorhiziennes, ouvert un peu mieux pour la morille).
+d'essence quand elle est connue. La densité est un critère **séparé**
+(`Species::standDensitySuitability()`) : TCD 0–100 % si connu, sinon FO/FF.
 
 **Format attendu.** GeoJSON une ligne par polygone (`ogr2ogr -f GeoJSONSeq`), en WGS84, produit
 par `./dev.sh bdforet`. L'adaptateur accepte aussi un `FeatureCollection` classique pour les
@@ -195,23 +237,56 @@ non renseignée.
 
 **Corine Land Cover est à écarter** : sa résolution est trop grossière pour la grille de 50 m.
 
+## Saison (garde-fou)
+
+Pas un poids du score : à une date donnée elle est identique sur toute la carte, donc elle
+ne classe pas les spots. `Criterion::Season::weight()` vaut **0**. L'UI garde le badge
+« En saison / Hors saison » et une ligne d'état (`SeasonAssessment::gateMessage`).
+
+Hors fenêtre : `applyCaps` plafonne à `SeasonAssessment::OUT_OF_SEASON_CAP` (**38**,
+« À éviter »). Les morilles en septembre ne peuvent pas lire « Prometteur ». Le mode
+« Potentiel d'habitat » ignore ce plafond (et la météo) volontairement.
+
 ## Accès (parking + chemin)
 
 Pas un poids du score : filtre d'affichage et masque `access`. Colonne SQLite `access_distance`.
 
-Marche **le long du réseau OSM** depuis une voie parkable, puis **150 m d'approche** dans le
-peuplement (pente > 40° bloquée sur l'approche seulement). Vol d'oiseau interdit : une crête
-sans sentier reste hors d'atteinte (`AccessThreshold::UNREACHABLE` = 9999).
+Marche **le long du réseau OSM** depuis une **route carrossable** ou un parking, puis
+**500 m d'approche** dans le peuplement (pente > 40° bloquée sur l'approche seulement).
+Vol d'oiseau interdit : une crête sans sentier reste hors d'atteinte
+(`AccessThreshold::UNREACHABLE` = 9999).
+
+Départ voiture (`OsmWayAccess::isParkable`) : `amenity=parking` et les routes OSM au
+rendu **fond blanc / bordure sombre** (Carto, zoom ≥ 13) : `tertiary`, `unclassified`,
+`residential`, `living_street`, `road`. Les pistes (`track`), chemins et voies `service`
+ne sont **pas** un départ : on y marche seulement. Primaires et secondaires (fond orange /
+jaune) non plus — trop larges pour y « se garer » au sens du modèle ; on peut quand même
+les emprunter à pied pour joindre un sentier.
+
+Au clic, le même Dijkstra est relancé sur une fenêtre (~2,8 km) à partir des masques
+`park` / `path` stockés en SQLite, pour reconstruire le tracé (route ou sentier, puis
+approche). L'UI affiche un temps à **4 km/h** sur le coût-mètres déjà pondéré par la pente
+(`WALK_METERS_PER_HOUR`) et propose un GPX (centres de maille 50 m).
 
 | Constante | Valeur |
 |---|---|
-| `AccessThreshold::ALONG_PATH_METERS` | 1 500 m |
-| `AccessThreshold::APPROACH_METERS` | 150 m |
+| `AccessThreshold::ALONG_PATH_METERS` | 2 000 m |
+| `AccessThreshold::APPROACH_METERS` | 500 m |
 | `AccessThreshold::CLIFF_DEGREES` | 40° (approche) |
+| `AccessThreshold::WALK_METERS_PER_HOUR` | 4 000 m/h |
 
-Sources OSM : `OsmWayAccess` / Overpass (parkings, pistes, sentiers). L'interrupteur
-« Masquer les zones peu accessibles » masque les mailles hors budget sur le masque potentiel.
-La propriété privée et la réglementation locale **ne sont pas** modélisées.
+Sources OSM : `OsmWayAccess` / Overpass (parkings, routes blanches, sentiers et pistes).
+L'interrupteur « Masquer les zones peu accessibles » masque les mailles hors budget sur le
+masque potentiel. La propriété privée et la réglementation locale **ne sont pas** modélisées.
+
+## Export GPS (snapshot client)
+
+Pas une couche métier. Le panneau Affichage génère, **dans le navigateur**, un KMZ
+(PNG géoréférencé + placemarks des secteurs ≥ 90, nom = indice max) et un GPX (mêmes
+points) à partir de la `LayerGrid` déjà affichée — aucun endpoint. Les points sont
+triés du meilleur indice au plus faible. Le fichier se périme avec l'espèce, la date
+et l'emprise. Locus / AlpineQuest / Iphigénie lisent le KMZ ; Visorando / OsmAnd le GPX.
+Le GPX d'itinéraire au clic (`DetailPanel`) reste un chemin d'accès.
 
 ## Plafonds du score
 
@@ -224,13 +299,13 @@ La propriété privée et la réglementation locale **ne sont pas** modélisées
 | Phénologie de pousse < 25 (incubation) | 48 |
 | Phénologie de pousse < 45 | 62 |
 
-Les deux derniers existent parce que saison + habitat pouvaient afficher « Très prometteur »
+Les deux derniers existent parce que l'habitat seul pouvait afficher « Très prometteur »
 deux jours après l'orage déclenchant, avant toute fructification possible.
 
 ## Comment modifier les poids
 
 1. **Re-challenger d'abord** (section ci-dessus) : littérature + emprise / spots d'intérêt.
-2. Les poids sont dans `Criterion::weight()`. **Leur somme doit valoir 1,0.**
+2. Les poids sont dans `Criterion::weight()`. **Leur somme (hors saison = 0) doit valoir 1,0.**
 3. L'interface n'affiche plus `rationale()` (notice du modèle) : seulement `explanation`
    (ce que *ce point* dit). `rationale()` reste la notice mainteneur ; si un poids change,
    elle doit rester vraie ici et dans la table d'audit.

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Cartography;
 
-use App\Domain\Terrain\CanopyClosure;
 use App\Domain\Terrain\ForestCover;
 use App\Domain\Terrain\Substrate;
 use App\Domain\Mycology\ScoringMode;
@@ -46,10 +45,12 @@ final readonly class LayerLegendFactory
                 ['value' => ForestCover::Conifer->value, 'label' => ForestCover::Conifer->label(), 'color' => '#1f6b4a'],
                 ['value' => ForestCover::Mixed->value, 'label' => ForestCover::Mixed->label(), 'color' => '#4b9a6a'],
             ]),
-            MapLayer::StandDensity => new LayerLegend($layer->label(), null, true, [
-                ['value' => CanopyClosure::Unknown->value, 'label' => CanopyClosure::Unknown->shortLabel(), 'color' => '#c8c2b4'],
-                ['value' => CanopyClosure::Open->value, 'label' => CanopyClosure::Open->label(), 'color' => '#7cb342'],
-                ['value' => CanopyClosure::Closed->value, 'label' => CanopyClosure::Closed->label(), 'color' => '#1f4d2e'],
+            MapLayer::StandDensity => new LayerLegend($layer->label(), '%', false, [
+                ['value' => 0, 'label' => '0 %', 'color' => '#e8e4d9'],
+                ['value' => 25, 'label' => 'Ouvert', 'color' => '#9ccc65'],
+                ['value' => 55, 'label' => 'Optimum', 'color' => '#f0c14a'],
+                ['value' => 80, 'label' => 'Fermé', 'color' => '#2e7d4f'],
+                ['value' => 100, 'label' => '100 %', 'color' => '#123524'],
             ]),
             MapLayer::Geology => new LayerLegend($layer->label(), null, true, [
                 ['value' => Substrate::Unknown->value, 'label' => Substrate::Unknown->label(), 'color' => '#c8c2b4'],
@@ -83,7 +84,7 @@ final readonly class LayerLegendFactory
                 ['value' => 0, 'label' => 'Au départ', 'color' => '#22d3ee'],
                 ['value' => 500, 'label' => '500 m', 'color' => '#0ea5e9'],
                 ['value' => 1000, 'label' => '1 km', 'color' => '#2563eb'],
-                ['value' => 1500, 'label' => '1,5 km à pied', 'color' => '#1e3a8a'],
+                ['value' => 2000, 'label' => '2 km à pied', 'color' => '#1e3a8a'],
             ]),
         };
     }

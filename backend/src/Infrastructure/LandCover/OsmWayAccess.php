@@ -6,18 +6,21 @@ namespace App\Infrastructure\LandCover;
 
 /**
  * Classifies OSM tags into "where you can leave the car" vs "where you walk in".
- * Forest tracks without a tracktype stay parkable: the tag is often missing on DFCI pistes.
+ *
+ * Parkable matches the white-fill / dark-casing roads on the standard OSM map
+ * (tertiary, unclassified, residential) plus amenity=parking. Tracks and service
+ * alleys are walkable only: they are not a place to start the car leg.
  */
 final class OsmWayAccess
 {
+    /** White fill, grey/black casing on OSM Carto (zoom ≥ 13). */
     private const PARK_HIGHWAYS = [
-        'primary',
-        'secondary',
         'tertiary',
+        'tertiary_link',
         'unclassified',
         'residential',
         'living_street',
-        'service',
+        'road',
     ];
 
     private const PATH_HIGHWAYS = [
@@ -26,36 +29,42 @@ final class OsmWayAccess
         'footway',
         'bridleway',
         'cycleway',
+        'service',
+        'primary',
+        'primary_link',
+        'secondary',
+        'secondary_link',
     ];
 
     /** @param array<string, mixed> $tags */
     public static function isParkable(array $tags): bool
+    {
+        if (self::isClosedToCars($tags)) {
+            return false;
+        }
+        if (($tags['amenity'] ?? null) === 'parking') {
+            return true;
+        }
+
+        return \in_array((string) ($tags['highway'] ?? ''), self::PARK_HIGHWAYS, true);
+    }
+
+    /** @param array<string, mixed> $tags */
+    public static function isWalkable(array $tags): bool
     {
         if (($tags['amenity'] ?? null) === 'parking') {
             return true;
         }
 
         $highway = (string) ($tags['highway'] ?? '');
-        if (\in_array($highway, self::PARK_HIGHWAYS, true)) {
-            return true;
-        }
-        if ($highway !== 'track') {
-            return false;
-        }
-        if (($tags['motor_vehicle'] ?? '') === 'no' || ($tags['access'] ?? '') === 'no') {
-            return false;
-        }
 
-        $tracktype = (string) ($tags['tracktype'] ?? '');
-
-        return $tracktype !== 'grade4' && $tracktype !== 'grade5';
+        return \in_array($highway, self::PARK_HIGHWAYS, true)
+            || \in_array($highway, self::PATH_HIGHWAYS, true);
     }
 
     /** @param array<string, mixed> $tags */
-    public static function isWalkable(array $tags): bool
+    private static function isClosedToCars(array $tags): bool
     {
-        $highway = (string) ($tags['highway'] ?? '');
-
-        return \in_array($highway, self::PATH_HIGHWAYS, true);
+        return ($tags['motor_vehicle'] ?? '') === 'no' || ($tags['access'] ?? '') === 'no';
     }
 }

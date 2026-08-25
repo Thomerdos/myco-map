@@ -19,7 +19,7 @@ interface TerrainCellStore
     public function isEmpty(): bool;
 
     /**
-     * @return iterable<int, array{column: int, row: int, profile: TerrainProfile}>
+     * @return iterable<int, array{column: int, row: int, profile: TerrainProfile, park?: int, path?: int}>
      */
     public function readWindow(GridWindow $window): iterable;
 

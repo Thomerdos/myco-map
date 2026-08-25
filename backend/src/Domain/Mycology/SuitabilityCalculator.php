@@ -27,7 +27,6 @@ final readonly class SuitabilityCalculator
         $total = 0.0;
 
         if ($mode->includesMoment()) {
-            $total += $season->criterionScore->value * $mode->weight(Criterion::Season);
             $total += $this->weatherValue($species, $weather) * $mode->weight(Criterion::Weather);
         }
 
@@ -80,13 +79,6 @@ final readonly class SuitabilityCalculator
         $parts = [];
 
         if ($mode->includesMoment()) {
-            $seasonScore = $season->criterionScore;
-            $parts[] = new CriterionScore(
-                $seasonScore->criterion,
-                $seasonScore->value,
-                $seasonScore->explanation,
-                $mode->weight(Criterion::Season),
-            );
             $parts[] = new CriterionScore(
                 Criterion::Weather,
                 $this->weatherValue($species, $weather),
@@ -161,7 +153,7 @@ final readonly class SuitabilityCalculator
 
         if ($mode->includesMoment()) {
             if (!$season->isInSeason()) {
-                $total = min($total, 38.0);
+                $total = min($total, SeasonAssessment::OUT_OF_SEASON_CAP);
             }
 
             // Habitat alone must not read as "go now" while fruitbodies are still incubating.
@@ -328,7 +320,11 @@ final readonly class SuitabilityCalculator
 
     private function standDensityValue(Species $species, TerrainProfile $terrain): float
     {
-        return $species->standDensitySuitability($terrain->cover, $terrain->canopy) * 100;
+        return $species->standDensitySuitability(
+            $terrain->cover,
+            $terrain->canopy,
+            $terrain->canopyCoverPercent,
+        ) * 100;
     }
 
     private function geologyValue(Species $species, TerrainProfile $terrain): float
@@ -435,10 +431,32 @@ final readonly class SuitabilityCalculator
                 : 'Hors forêt — acceptable pour cette espèce';
         }
 
+        if ($terrain->canopyCoverPercent !== null) {
+            $value = $species->standDensitySuitability(
+                $terrain->cover,
+                $terrain->canopy,
+                $terrain->canopyCoverPercent,
+            );
+            $band = $species->canopyDensity ?? new CanopyDensityBand();
+            $percent = $terrain->canopyCoverPercent;
+            $note = match (true) {
+                $percent >= $band->optimumLow && $percent <= $band->optimumHigh => ', dans l\'optimum de surface terrière',
+                $percent > $band->optimumHigh => ', plus fermé que l\'optimum (rendement en baisse)',
+                default => ', plus ouvert que l\'optimum',
+            };
+
+            return sprintf(
+                '%d %% de couvert arboré (Copernicus TCD)%s — score densité %.0f / 100',
+                $percent,
+                $note,
+                $value * 100,
+            );
+        }
+
         $reading = match ($terrain->canopy) {
             \App\Domain\Terrain\CanopyClosure::Open => 'couvert ouvert (FO, 10–40 %) : plus proche de l\'optimum de surface terrière',
             \App\Domain\Terrain\CanopyClosure::Closed => 'couvert fermé (FF, > 40 %) : peuplement plus dense que l\'optimum courant',
-            default => 'densité de peuplement inconnue (proxy FO/FF indisponible)',
+            default => 'densité de peuplement inconnue (TCD et proxy FO/FF indisponibles)',
         };
 
         return sprintf('%s — %s', $terrain->canopy->shortLabel(), $reading);

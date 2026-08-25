@@ -16,6 +16,7 @@ final readonly class PrecomputationReport
         public int $geologyPolygons,
         public int $waterFeatures,
         public int $accessWays,
+        public int $canopyCoverCells,
         public int $unavailableChunks,
         public float $durationSeconds,
     ) {

@@ -59,7 +59,7 @@ final class PrecomputeCommand extends Command
         }
 
         $io->success(sprintf(
-            '%s mailles de %d m (%d × %d) en %.0f s — %d tuiles de relief, %d polygones forestiers, %d formations géologiques, %d éléments hydro, %d voies d\'accès',
+            '%s mailles de %d m (%d × %d) en %.0f s — %d tuiles de relief, %d polygones forestiers, %d formations géologiques, %d éléments hydro, %d voies d\'accès, %d mailles TCD',
             number_format($report->cells, 0, ',', ' '),
             $report->cellSizeMeters,
             $report->columns,
@@ -70,7 +70,15 @@ final class PrecomputeCommand extends Command
             $report->geologyPolygons,
             $report->waterFeatures,
             $report->accessWays,
+            $report->canopyCoverCells,
         ));
+
+        if ($report->canopyCoverCells === 0) {
+            $io->note(
+                'TCD Copernicus absent : densité en repli FO/FF. Téléchargez les tuiles avec '
+                .'./dev.sh tcd (compte Copernicus Data Space) puis relancez le précalcul.'
+            );
+        }
 
         if (!$report->isComplete()) {
             $io->warning(sprintf(

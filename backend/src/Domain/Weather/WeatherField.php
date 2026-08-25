@@ -42,7 +42,7 @@ final readonly class WeatherField
         }
 
         $trigger = $recent = $fortnight = $temperature = $humidity = $soil = $soaking = 0.0;
-        $accumulated = $preceding = 0.0;
+        $accumulated = $preceding = $rainSince = $litter = 0.0;
         $daysWeighted = 0.0;
         $daysWeight = 0.0;
         $nearestIndex = array_key_first($weights) ?? 0;
@@ -64,6 +64,8 @@ final readonly class WeatherField
             $soaking += $conditions->soakingRainMillimetres * $share;
             $accumulated += $conditions->accumulatedRainMillimetres * $share;
             $preceding += $conditions->precedingDryMillimetres * $share;
+            $rainSince += $conditions->rainSinceSoakingMillimetres * $share;
+            $litter += $conditions->litterSoilMoisture * $share;
             if ($conditions->daysSinceSoakingRain !== null) {
                 $daysWeighted += $conditions->daysSinceSoakingRain * $share;
                 $daysWeight += $share;
@@ -82,6 +84,8 @@ final readonly class WeatherField
             $accumulated,
             $preceding,
             $this->samples[$nearestIndex]['conditions']->soakingEvents,
+            $rainSince,
+            $litter,
         );
     }
 
@@ -89,7 +93,7 @@ final readonly class WeatherField
     {
         $count = \count($this->samples);
         $trigger = $recent = $fortnight = $temperature = $humidity = $soil = $soaking = 0.0;
-        $accumulated = $preceding = 0.0;
+        $accumulated = $preceding = $rainSince = $litter = 0.0;
         $daysSum = 0;
         $daysCount = 0;
         $mergedSpells = [];
@@ -105,22 +109,34 @@ final readonly class WeatherField
             $soaking += $conditions->soakingRainMillimetres;
             $accumulated += $conditions->accumulatedRainMillimetres;
             $preceding += $conditions->precedingDryMillimetres;
+            $rainSince += $conditions->rainSinceSoakingMillimetres;
+            $litter += $conditions->litterSoilMoisture;
             if ($conditions->daysSinceSoakingRain !== null) {
                 $daysSum += $conditions->daysSinceSoakingRain;
                 $daysCount++;
             }
             foreach ($conditions->soakingSpells() as $spell) {
                 $key = $spell['daysSince'];
-                if (!isset($mergedSpells[$key]) || $spell['millimetres'] > $mergedSpells[$key]) {
-                    $mergedSpells[$key] = $spell['millimetres'];
+                $current = $mergedSpells[$key] ?? ['millimetres' => 0.0, 'rainAfter' => 0.0, 'temperature' => null];
+                if ($spell['millimetres'] > $current['millimetres']) {
+                    $mergedSpells[$key] = [
+                        'millimetres' => $spell['millimetres'],
+                        'rainAfter' => (float) ($spell['rainAfter'] ?? 0.0),
+                        'temperature' => isset($spell['temperature']) ? (float) $spell['temperature'] : null,
+                    ];
                 }
             }
         }
 
         ksort($mergedSpells);
         $events = [];
-        foreach (array_reverse($mergedSpells, true) as $daysSince => $millimetres) {
-            $events[] = ['daysSince' => (int) $daysSince, 'millimetres' => $millimetres];
+        foreach (array_reverse($mergedSpells, true) as $daysSince => $spell) {
+            $events[] = [
+                'daysSince' => (int) $daysSince,
+                'millimetres' => $spell['millimetres'],
+                'rainAfter' => $spell['rainAfter'],
+                'temperature' => $spell['temperature'],
+            ];
         }
 
         return new WeatherConditions(
@@ -135,6 +151,8 @@ final readonly class WeatherField
             $accumulated / $count,
             $preceding / $count,
             $events,
+            $rainSince / $count,
+            $litter / $count,
         );
     }
 }

@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Raster;
 
+use App\Domain\Geo\Coordinates;
 use App\Domain\Geo\Grid;
 use App\Domain\Terrain\AccessThreshold;
+use App\Domain\Terrain\AccessWalk;
 
 /**
- * Walking distance from a parkable way, following OSM paths then a short slope-aware
- * approach into the stand. Crow-flies chamfer is not used: ridges without a path stay
- * unreachable.
+ * Walking distance from a public OSM road or parking, following paths then a short
+ * slope-aware approach into the stand. Crow-flies chamfer is not used: ridges without
+ * a path stay unreachable.
  */
 final readonly class PathNetworkAccess
 {
@@ -34,9 +36,115 @@ final readonly class PathNetworkAccess
     }
 
     /**
+     * Same budgets as {@see compute()}, but keeps predecessors so the walk can
+     * be drawn from the trailhead to $destination.
+     *
      * @param \SplFixedArray<int> $park
      * @param \SplFixedArray<int> $path
      * @param \SplFixedArray<float> $slope
+     */
+    public function trace(
+        \SplFixedArray $park,
+        \SplFixedArray $path,
+        \SplFixedArray $slope,
+        Grid $grid,
+        int $destination,
+    ): ?AccessWalk {
+        $total = $grid->cellCount();
+        if ($destination < 0 || $destination >= $total) {
+            return null;
+        }
+
+        /** @var \SplFixedArray<int> $alongPred */
+        $alongPred = new \SplFixedArray($total);
+        /** @var \SplFixedArray<int> $approachPred */
+        $approachPred = new \SplFixedArray($total);
+        for ($index = 0; $index < $total; $index++) {
+            $alongPred[$index] = -1;
+            $approachPred[$index] = -1;
+        }
+
+        $along = $this->alongPaths($park, $path, $slope, $grid, $alongPred);
+        $access = $this->withApproach($along, $path, $slope, $grid, $approachPred);
+        $meters = $access[$destination];
+        if ($meters >= AccessThreshold::UNREACHABLE) {
+            return null;
+        }
+
+        $offPath = [];
+        $index = $destination;
+        $guard = 0;
+        while ($path[$index] !== 1) {
+            if ($guard++ > $total) {
+                return null;
+            }
+            $offPath[] = $index;
+            $pred = $approachPred[$index];
+            if ($pred < 0) {
+                return null;
+            }
+            $index = $pred;
+        }
+
+        $onPath = [];
+        while ($index >= 0) {
+            if ($guard++ > $total * 2) {
+                return null;
+            }
+            $onPath[] = $index;
+            $pred = $alongPred[$index];
+            $index = $pred;
+        }
+
+        if ($onPath === []) {
+            return null;
+        }
+
+        $pathExit = $onPath[0];
+        $alongMeters = min($meters, (int) round($along[$pathExit]));
+        $approachMeters = max(0, $meters - $alongMeters);
+
+        $indices = array_merge(array_reverse($onPath), array_reverse($offPath));
+        $coordinates = [];
+        $previous = null;
+        foreach ($indices as $cell) {
+            if ($cell === $previous) {
+                continue;
+            }
+            $column = $cell % $grid->columns;
+            $row = intdiv($cell, $grid->columns);
+            $point = $grid->coordinatesAt($column, $row);
+            $coordinates[] = [
+                'lat' => round($point->latitude, 5),
+                'lng' => round($point->longitude, 5),
+            ];
+            $previous = $cell;
+        }
+
+        if ($coordinates === []) {
+            return null;
+        }
+
+        $start = new Coordinates($coordinates[0]['lat'], $coordinates[0]['lng']);
+        $approachFromIndex = max(0, \count($onPath) - 1);
+
+        return new AccessWalk(
+            reachable: true,
+            meters: $meters,
+            minutes: AccessThreshold::walkingMinutes($meters),
+            alongMeters: $alongMeters,
+            approachMeters: $approachMeters,
+            start: $start,
+            coordinates: $coordinates,
+            approachFromIndex: min($approachFromIndex, \count($coordinates) - 1),
+        );
+    }
+
+    /**
+     * @param \SplFixedArray<int> $park
+     * @param \SplFixedArray<int> $path
+     * @param \SplFixedArray<float> $slope
+     * @param \SplFixedArray<int>|null $predecessor
      * @return \SplFixedArray<float>
      */
     private function alongPaths(
@@ -44,6 +152,7 @@ final readonly class PathNetworkAccess
         \SplFixedArray $path,
         \SplFixedArray $slope,
         Grid $grid,
+        ?\SplFixedArray $predecessor = null,
     ): \SplFixedArray {
         $columns = $grid->columns;
         $rows = $grid->rows;
@@ -101,6 +210,9 @@ final readonly class PathNetworkAccess
                     continue;
                 }
                 $distance[$neighbour] = $nextCost;
+                if ($predecessor !== null) {
+                    $predecessor[$neighbour] = $index;
+                }
                 $queue->insert($neighbour, $nextCost);
             }
         }
@@ -112,6 +224,7 @@ final readonly class PathNetworkAccess
      * @param \SplFixedArray<float> $along
      * @param \SplFixedArray<int> $path
      * @param \SplFixedArray<float> $slope
+     * @param \SplFixedArray<int>|null $predecessor
      * @return \SplFixedArray<int>
      */
     private function withApproach(
@@ -119,6 +232,7 @@ final readonly class PathNetworkAccess
         \SplFixedArray $path,
         \SplFixedArray $slope,
         Grid $grid,
+        ?\SplFixedArray $predecessor = null,
     ): \SplFixedArray {
         $columns = $grid->columns;
         $rows = $grid->rows;
@@ -185,6 +299,9 @@ final readonly class PathNetworkAccess
                 }
                 $best[$neighbour] = $nextCost;
                 $access[$neighbour] = min($cap, (int) round($nextCost));
+                if ($predecessor !== null) {
+                    $predecessor[$neighbour] = $index;
+                }
                 $queue->insert([$neighbour, $nextApproach], $nextCost);
             }
         }

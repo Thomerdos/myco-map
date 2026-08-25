@@ -34,7 +34,17 @@ install_all() {
 
 precompute() {
   ensure_env
-  (cd "${ROOT}/backend" && php bin/console app:precompute "$@")
+  if php -m 2>/dev/null | grep -qi '^pdo_sqlite$'; then
+    (cd "${ROOT}/backend" && php bin/console app:precompute "$@")
+    return
+  fi
+  if command -v docker >/dev/null 2>&1; then
+    echo "Extension PHP pdo_sqlite absente — précalcul via Docker."
+    (cd "${ROOT}" && docker compose run --rm --no-deps backend php bin/console app:precompute "$@")
+    return
+  fi
+  echo "pdo_sqlite est requis. Installez php-sqlite3 (sudo apt install php-sqlite3) ou Docker." >&2
+  exit 1
 }
 
 restore_data() {
@@ -104,7 +114,7 @@ bdforet() {
     ogr2ogr_cmd=(
       docker run --rm
       -v "${ROOT}/backend/var/bdforet:/bdforet"
-      osgeo/gdal:ubuntu-small-latest
+      ghcr.io/osgeo/gdal:ubuntu-small-latest
       ogr2ogr
     )
   else
@@ -177,7 +187,7 @@ bdforet() {
       fi
       docker run --rm \
         -v "${ROOT}/backend/var/bdforet:/bdforet" \
-        osgeo/gdal:ubuntu-small-latest \
+        ghcr.io/osgeo/gdal:ubuntu-small-latest \
         ogr2ogr -f GeoJSONSeq -append -t_srs EPSG:4326 \
           -select CODE_TFV \
           -nlt PROMOTE_TO_MULTI \
@@ -251,6 +261,119 @@ geologie() {
   echo "Relancez ./dev.sh precompute (ou docker compose exec backend …) pour intégrer le substrat."
 }
 
+# Downloads Copernicus HRL Tree Cover Density via CDSE OData (or converts local GeoTIFFs)
+# onto the 50 m study lattice.
+tcd() {
+  local prefix="${ROOT}/backend/var/tcd/canopy-cover"
+  local source_dir="${ROOT}/backend/var/tcd/source"
+  local manifest=""
+  local -a sources=()
+
+  if [[ $# -eq 0 ]]; then
+    python3 "${ROOT}/scripts/fetch_tcd.py" "${source_dir}"
+    manifest="${source_dir}/manifest.json"
+    if [[ ! -f "${manifest}" ]]; then
+      echo "Téléchargement TCD incomplet (manifeste absent)." >&2
+      exit 1
+    fi
+  else
+    sources=("$@")
+    local source
+    for source in "${sources[@]}"; do
+      if [[ ! -f "${source}" ]]; then
+        echo "Introuvable : ${source}" >&2
+        echo >&2
+        echo "Sans argument, ./dev.sh tcd télécharge les tuiles 10 m via l'API OData" >&2
+        echo "Copernicus Data Space (compte sur https://dataspace.copernicus.eu," >&2
+        echo "variables CDSE_USERNAME / CDSE_PASSWORD ou CDSE_REFRESH_TOKEN)." >&2
+        exit 1
+      fi
+    done
+    local sibling
+    sibling="$(cd "$(dirname "${sources[0]}")" && pwd)/manifest.json"
+    if [[ -f "${sibling}" ]]; then
+      manifest="${sibling}"
+    fi
+  fi
+
+  mkdir -p "$(dirname "${prefix}")"
+  convert_tcd "${prefix}" "${manifest}" "${sources[@]}"
+  echo "Relancez ./dev.sh precompute pour écrire la colonne canopy_cover."
+}
+
+convert_tcd() {
+  local prefix="$1"
+  local manifest="$2"
+  shift 2
+  local -a sources=("$@")
+  local -a extra=()
+  if [[ -n "${manifest}" ]]; then
+    extra+=(--manifest "${manifest}")
+  fi
+
+  if command -v gdalwarp >/dev/null 2>&1; then
+    python3 "${ROOT}/scripts/convert_tcd.py" "${prefix}" "${extra[@]}" "${sources[@]}"
+    return
+  fi
+
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "gdalwarp est requis pour la conversion. Installez GDAL ou Docker :" >&2
+    echo "  Debian/Ubuntu : sudo apt install gdal-bin python3-gdal" >&2
+    echo "  macOS         : brew install gdal" >&2
+    exit 1
+  fi
+
+  echo "gdalwarp local introuvable — utilisation de l'image osgeo/gdal."
+  local staging="${ROOT}/backend/var/tcd/_inputs"
+  rm -rf "${staging}"
+  mkdir -p "${staging}"
+  local src
+  for src in "${sources[@]}"; do
+    ln "${src}" "${staging}/$(basename "${src}")" 2>/dev/null || cp "${src}" "${staging}/$(basename "${src}")"
+  done
+  local -a docker_args=(/tcd/canopy-cover)
+  if [[ -n "${manifest}" ]]; then
+    python3 - "${manifest}" "${staging}/manifest.json" <<'PY'
+from pathlib import Path
+import json
+import shutil
+import sys
+
+src, dest = Path(sys.argv[1]), Path(sys.argv[2])
+payload = json.loads(src.read_text(encoding="utf-8"))
+parent = src.parent
+for product in payload.get("products") or []:
+    name = product.get("path") or product.get("name")
+    if not name:
+        continue
+    tile = Path(name)
+    if not tile.is_absolute():
+        tile = parent / tile
+    if not tile.suffix:
+        tile = tile.with_suffix(".tif")
+    if not tile.is_file():
+        continue
+    target = dest.parent / tile.name
+    if not target.exists():
+        try:
+            target.hardlink_to(tile)
+        except OSError:
+            shutil.copy2(tile, target)
+    product["path"] = tile.name
+dest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+PY
+    docker_args+=(--manifest /tcd/_inputs/manifest.json)
+  fi
+  for src in "${sources[@]}"; do
+    docker_args+=("/tcd/_inputs/$(basename "${src}")")
+  done
+  docker run --rm \
+    -v "${ROOT}/scripts:/scripts:ro" \
+    -v "${ROOT}/backend/var/tcd:/tcd" \
+    ghcr.io/osgeo/gdal:ubuntu-small-latest \
+    python3 /scripts/convert_tcd.py "${docker_args[@]}"
+}
+
 case "${1:-}" in
   install) install_all ;;
   precompute) shift; precompute "$@" ;;
@@ -258,11 +381,12 @@ case "${1:-}" in
   export-data) export_data ;;
   bdforet) shift; bdforet "$@" ;;
   geologie) shift; geologie "$@" ;;
+  tcd) shift; tcd "$@" ;;
   backend) backend ;;
   frontend) frontend ;;
   docker) docker_up ;;
   *)
-    echo "Usage: ./dev.sh [install|restore-data|precompute|export-data|bdforet|geologie|backend|frontend|docker]"
+    echo "Usage: ./dev.sh [install|restore-data|precompute|export-data|bdforet|geologie|tcd|backend|frontend|docker]"
     echo
     echo "  install       Installe les dépendances PHP et JS"
     echo "  restore-data  Restaure la base précalculée depuis data/"
@@ -270,6 +394,7 @@ case "${1:-}" in
     echo "  export-data   Réexporte la base vers data/ pour publication"
     echo "  bdforet       Convertit BD Forêt V2 pour un couvert forestier précis"
     echo "  geologie      Convertit BRGM Charm-50 pour le substrat"
+    echo "  tcd           Télécharge / convertit Copernicus Tree Cover Density (0–100 %)"
     echo "  backend       Démarre l'API sur http://127.0.0.1:8765"
     echo "  frontend      Démarre l'interface sur http://127.0.0.1:43123"
     echo "  docker        Démarre API + interface via Docker Compose"

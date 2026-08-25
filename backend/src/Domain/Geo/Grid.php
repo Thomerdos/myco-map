@@ -19,15 +19,40 @@ final readonly class Grid
     public function __construct(
         public BoundingBox $bounds,
         public int $cellSizeMeters,
+        ?float $latitudeStep = null,
+        ?float $longitudeStep = null,
+        ?int $columns = null,
+        ?int $rows = null,
     ) {
         $meanLatitude = ($bounds->south + $bounds->north) / 2;
 
-        $this->latitudeStep = $cellSizeMeters / self::METERS_PER_DEGREE_LATITUDE;
-        $this->longitudeStep = $cellSizeMeters
+        $this->latitudeStep = $latitudeStep ?? $cellSizeMeters / self::METERS_PER_DEGREE_LATITUDE;
+        $this->longitudeStep = $longitudeStep ?? $cellSizeMeters
             / (self::METERS_PER_DEGREE_LATITUDE * cos(deg2rad($meanLatitude)));
 
-        $this->columns = (int) floor(($bounds->east - $bounds->west) / $this->longitudeStep);
-        $this->rows = (int) floor(($bounds->north - $bounds->south) / $this->latitudeStep);
+        $this->columns = $columns ?? (int) floor(($bounds->east - $bounds->west) / $this->longitudeStep);
+        $this->rows = $rows ?? (int) floor(($bounds->north - $bounds->south) / $this->latitudeStep);
+    }
+
+    /**
+     * Sub-lattice covering $window with the parent cell size and steps, so
+     * columnFor / rowFor stay aligned with the stored grid.
+     */
+    public function coveringWindow(GridWindow $window): self
+    {
+        $south = $this->bounds->south + $window->firstRow * $this->latitudeStep;
+        $west = $this->bounds->west + $window->firstColumn * $this->longitudeStep;
+        $north = $this->bounds->south + ($window->lastRow + 1) * $this->latitudeStep;
+        $east = $this->bounds->west + ($window->lastColumn + 1) * $this->longitudeStep;
+
+        return new self(
+            new BoundingBox($south, $west, $north, $east),
+            $this->cellSizeMeters,
+            $this->latitudeStep,
+            $this->longitudeStep,
+            $window->columns(),
+            $window->rows(),
+        );
     }
 
     public function latitudeAt(int $row): float

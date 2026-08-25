@@ -47,7 +47,7 @@ final readonly class OpenMeteoWeather implements WeatherSource
             ->setTime(12, 0);
 
         $cacheKey = sprintf(
-            'weather_raw_%s_%s',
+            'weather_raw_v2_%s_%s',
             md5(serialize($bounds->toArray())),
             (new \DateTimeImmutable('now', $timezone))->format('Y-m-d-H'),
         );
@@ -79,6 +79,8 @@ final readonly class OpenMeteoWeather implements WeatherSource
                     accumulatedRainMillimetres: $values['accumulatedRain'] ?? 0.0,
                     precedingDryMillimetres: $values['precedingRain'] ?? 0.0,
                     soakingEvents: $values['soakingEvents'] ?? [],
+                    rainSinceSoakingMillimetres: $values['rainSinceSoaking'] ?? 0.0,
+                    litterSoilMoisture: $values['litterSoilMoisture'] ?? 0.30,
                 ),
             ];
         }
@@ -116,7 +118,7 @@ final readonly class OpenMeteoWeather implements WeatherSource
                     'latitude' => implode(',', $latitudes),
                     'longitude' => implode(',', $longitudes),
                     'daily' => 'precipitation_sum,temperature_2m_mean',
-                    'hourly' => 'relative_humidity_2m,soil_moisture_0_to_1cm',
+                    'hourly' => 'relative_humidity_2m,soil_moisture_0_to_1cm,soil_moisture_3_to_9cm',
                     'past_days' => self::PAST_DAYS,
                     'forecast_days' => self::FORECAST_DAYS,
                     'timezone' => 'Europe/Paris',
@@ -183,6 +185,10 @@ final readonly class OpenMeteoWeather implements WeatherSource
             $hourly['soil_moisture_0_to_1cm'] ?? [],
             'is_numeric',
         ));
+        $litterMoisture = array_values(array_filter(
+            $hourly['soil_moisture_3_to_9cm'] ?? [],
+            'is_numeric',
+        ));
         $hourlyTimes = array_values(array_map('strval', $hourly['time'] ?? []));
 
         $dayCount = \count($precipitation);
@@ -221,7 +227,7 @@ final readonly class OpenMeteoWeather implements WeatherSource
             }
         }
 
-        $events = $this->findSoakingEvents($precipitation, (int) $asOfIndex);
+        $events = $this->findSoakingEvents($precipitation, $temperatures, (int) $asOfIndex);
         $latest = $events[0] ?? ['daysSince' => null, 'millimetres' => 0.0];
 
         // Ambient conditions around the target day (daily mean + ~3 days of hourly).
@@ -232,6 +238,12 @@ final readonly class OpenMeteoWeather implements WeatherSource
 
         $humiditySlice = $this->hourlyAround($humidity, $hourlyTimes, $asOfKey, 72);
         $soilSlice = $this->hourlyAround($soilMoisture, $hourlyTimes, $asOfKey, 48);
+        $litterSlice = $this->hourlyAround($litterMoisture, $hourlyTimes, $asOfKey, 48);
+
+        $rainSince = 0.0;
+        if (($latest['daysSince'] ?? null) !== null) {
+            $rainSince = (float) ($latest['rainAfter'] ?? 0.0);
+        }
 
         return [
             'triggerRain' => $triggerRain,
@@ -242,6 +254,8 @@ final readonly class OpenMeteoWeather implements WeatherSource
             'temperature' => $this->mean($tempSlice) ?? 12.0,
             'humidity' => $this->mean($humiditySlice) ?? 70.0,
             'soilMoisture' => $this->mean($soilSlice) ?? 0.3,
+            'litterSoilMoisture' => $this->mean($litterSlice) ?? 0.3,
+            'rainSinceSoaking' => $rainSince,
             'daysSinceSoaking' => $latest['daysSince'] ?? -1.0,
             'soakingRain' => $latest['millimetres'],
             'soakingEvents' => $events,
@@ -280,9 +294,10 @@ final readonly class OpenMeteoWeather implements WeatherSource
      * a flush already produced by an earlier one.
      *
      * @param list<float> $precipitation
-     * @return list<array{daysSince: int, millimetres: float}>
+     * @param list<float> $temperatures
+     * @return list<array{daysSince: int, millimetres: float, rainAfter: float, temperature: float}>
      */
-    private function findSoakingEvents(array $precipitation, int $asOfIndex): array
+    private function findSoakingEvents(array $precipitation, array $temperatures, int $asOfIndex): array
     {
         $events = [];
         $cursor = $asOfIndex;
@@ -304,14 +319,25 @@ final readonly class OpenMeteoWeather implements WeatherSource
             }
 
             $millimetres = 0.0;
+            $tempSlice = [];
             for ($day = $start; $day <= $end; $day++) {
                 $millimetres += $precipitation[$day];
+                if (isset($temperatures[$day])) {
+                    $tempSlice[] = $temperatures[$day];
+                }
+            }
+
+            $rainAfter = 0.0;
+            for ($day = $end + 1; $day <= $asOfIndex; $day++) {
+                $rainAfter += $precipitation[$day];
             }
 
             if ($millimetres >= 15.0) {
                 $events[] = [
                     'daysSince' => $asOfIndex - $end,
                     'millimetres' => $millimetres,
+                    'rainAfter' => $rainAfter,
+                    'temperature' => $this->mean($tempSlice) ?? 12.0,
                 ];
             }
 
@@ -365,6 +391,7 @@ final readonly class OpenMeteoWeather implements WeatherSource
                     'time' => [],
                     'relative_humidity_2m' => [],
                     'soil_moisture_0_to_1cm' => [],
+                    'soil_moisture_3_to_9cm' => [],
                 ],
             ]],
             'degraded' => true,

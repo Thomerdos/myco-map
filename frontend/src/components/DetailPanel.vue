@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ExpansionPanel, Progress } from '@vuetify/v0'
-import type { LocationReport, Sector, Weather } from '../types'
-import { criterionColor, scoreColor } from '../lib/scoreColor'
+import type { LocationHorizonDay, LocationReport, Sector, Weather } from '../types'
+import { criterionColor, flushLegendItems, flushLegendLabel, flushMarkColor, potentialColor, roundedScore, scoreColor } from '../lib/scoreColor'
 import WeatherBlock from './WeatherBlock.vue'
 import DisclosureSection from './ui/DisclosureSection.vue'
 
@@ -22,6 +22,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   highlightPicked: [point: { lat: number; lng: number }]
+  'update:projectionDate': [value: string]
 }>()
 
 const openPanels = ref<string[]>(props.report ? [] : ['sectors'])
@@ -44,12 +45,16 @@ const weatherAtPoint = computed(() => props.report != null)
 
 const showWeather = computed(() => !props.habitatOnly && props.weather != null)
 
-const terrainSummary = computed(() => {
+const placeSummary = computed(() => {
   if (!props.report) return ''
   const terrain = props.report.terrain
   const cover = terrain.hostTreeCode ? terrain.hostTree : terrain.cover
-  const access = formatAccess(terrain.accessDistance) ?? "hors d'atteinte"
-  return `${terrain.elevation} m · ${cover.toLowerCase()} · ${access}`
+  return `${terrain.elevation} m · ${cover.toLowerCase()}`
+})
+
+const walkSummary = computed(() => {
+  if (!props.report) return ''
+  return formatWalk(props.report) ?? "hors d'atteinte"
 })
 
 const weatherPreview = computed(() => {
@@ -66,7 +71,19 @@ const weatherPreview = computed(() => {
   return `${storm} · ${weather.accumulatedRain} mm / 26 j`
 })
 
+const scoredBreakdown = computed(() =>
+  (props.report?.breakdown ?? []).filter((item) => item.criterion !== 'season'),
+)
+
+const seasonGateLine = computed(() => {
+  if (!props.report || props.habitatOnly) return null
+  return props.report.seasonGate ?? null
+})
+
 const driversPreview = computed(() => {
+  if (seasonGateLine.value && props.report && !props.report.inSeason) {
+    return 'Hors saison'
+  }
   if (!props.report) return ''
   return props.report.drivers
     .slice(0, 2)
@@ -108,15 +125,118 @@ const visibleSectors = computed(() =>
 
 const hiddenSectorCount = computed(() => Math.max(0, props.sectors.length - SECTORS_SHOWN))
 
+const horizon = computed(() =>
+  props.habitatOnly ? [] : (props.report?.horizon ?? []),
+)
+
+const horizonPeak = computed(() => {
+  const days = horizon.value
+  if (days.length === 0) return null
+  return days.reduce((best, day) => (day.score > best.score ? day : best))
+})
+
+const horizonPeakCaption = computed(() => {
+  const peak = horizonPeak.value
+  if (!peak) return ''
+  const score = roundedScore(peak.score)
+  if (peak.offset === 0) return `Meilleur aujourd'hui · ${score}`
+  const formatted = new Intl.DateTimeFormat('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+  }).format(new Date(`${peak.date}T12:00:00`))
+  return `Meilleur le ${formatted} (${peak.label}) · ${score}`
+})
+
+const horizonLegend = computed(() => flushLegendItems(horizon.value.map((day) => day.weather)))
+
+const terrainDensity = computed(() =>
+  props.report ? densityLabel(props.report.terrain) : null,
+)
+
+function horizonTick(day: LocationHorizonDay): string {
+  if (day.offset === 0) return 'Auj'
+  return String(new Date(`${day.date}T12:00:00`).getDate())
+}
+
+function horizonBarPercent(score: number): number {
+  return Math.max(8, Math.min(100, Math.round(score)))
+}
+
+function horizonTitle(day: LocationHorizonDay): string {
+  const score = roundedScore(day.score)
+  return `${flushLegendLabel(day.weather)} · ${day.weather.label} — ${score}`
+}
+
 function sectorStand(sector: Sector): string {
   const parts = [sector.hostTreeCode ? sector.hostTree : sector.cover]
-  if (sector.canopyCode) parts.push(sector.canopy.toLowerCase())
+  if (sector.canopyCover != null) {
+    parts.push(`${sector.canopyCover} %`)
+  } else if (sector.canopyCode) {
+    parts.push(sector.canopy.toLowerCase())
+  }
   return parts.join(', ')
+}
+
+function densityLabel(terrain: LocationReport['terrain']): string | null {
+  if (terrain.canopyCover != null) return `${terrain.canopyCover} % de couvert`
+  if (terrain.canopyCode) return terrain.canopy
+  return null
 }
 
 function formatAccess(meters: number | undefined): string | null {
   if (meters === undefined || meters >= 9999) return null
   return `chemin à ${meters} m`
+}
+
+function formatWalkDistance(meters: number): string {
+  if (meters >= 1000) {
+    const km = Math.round(meters / 100) / 10
+    return `${km.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} km`
+  }
+  return `${meters} m`
+}
+
+function formatWalk(report: LocationReport): string | null {
+  const walk = report.accessWalk
+  if (walk?.reachable) {
+    return `${walk.minutes} min · ${formatWalkDistance(walk.meters)}`
+  }
+  return formatAccess(report.terrain.accessDistance)
+}
+
+const canDownloadGpx = computed(() => {
+  const walk = props.report?.accessWalk
+  return walk != null && walk.reachable && walk.coordinates.length >= 2
+})
+
+function downloadAccessGpx() {
+  const report = props.report
+  const walk = report?.accessWalk
+  if (!report || !walk?.reachable || walk.coordinates.length < 2) return
+
+  const points = walk.coordinates
+    .map((point) => `      <trkpt lat="${point.lat}" lon="${point.lng}"></trkpt>`)
+    .join('\n')
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="myco-map" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Accès parking</name>
+    <trkseg>
+${points}
+    </trkseg>
+  </trk>
+</gpx>
+`
+  const blob = new Blob([gpx], { type: 'application/gpx+xml' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `acces-${report.coordinates.lat.toFixed(5)}-${report.coordinates.lng.toFixed(5)}.gpx`
+  link.rel = 'noopener'
+  document.body.append(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
 </script>
 
@@ -144,6 +264,59 @@ function formatAccess(meters: number | undefined): string | null {
       <p v-if="props.habitatOnly" class="mt-3 rounded-lg bg-[#e8ecf2] px-2.5 py-2 text-[0.78rem] text-[#2f3d55]">
         Mode potentiel d'habitat — météo et saison ignorées, poids renormalisés.
       </p>
+      <div v-if="horizon.length > 0" class="mt-3">
+        <h3 class="m-0 text-[0.74rem] font-bold uppercase tracking-wider text-secondary">Ici, 15 prochains jours</h3>
+        <p v-if="horizonPeakCaption" class="m-0 mt-0.5 text-xs text-secondary">{{ horizonPeakCaption }}</p>
+        <div class="mt-2 flex items-end gap-px">
+          <button
+            v-for="day in horizon"
+            :key="day.date"
+            type="button"
+            class="flex min-w-0 flex-1 flex-col items-center rounded-md px-px py-1 text-on-surface outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary"
+            :class="[
+              day.date === props.projectionDate ? 'bg-[#efe8d8] font-semibold' : 'hover:bg-[#efe8d8]',
+              { 'opacity-55': !day.inSeason },
+            ]"
+            :aria-pressed="day.date === props.projectionDate"
+            :title="horizonTitle(day)"
+            @click="emit('update:projectionDate', day.date)"
+          >
+            <span
+              class="flex h-14 w-full items-end justify-center"
+              aria-hidden="true"
+            >
+              <span
+                class="w-[70%] min-w-1 rounded-t-sm"
+                :class="day.date === horizonPeak?.date ? 'ring-1 ring-inset ring-[#2b261f]' : ''"
+                :style="{
+                  height: `${horizonBarPercent(day.score)}%`,
+                  background: potentialColor(day.score),
+                }"
+              />
+            </span>
+            <span
+              class="mt-1 w-full truncate text-center text-[0.58rem] leading-none"
+              :class="day.date === props.projectionDate ? 'text-primary' : 'text-secondary'"
+            >{{ horizonTick(day) }}</span>
+            <span
+              class="mt-0.5 h-1.5 w-1.5 rounded-full"
+              aria-hidden="true"
+              :style="{ background: flushMarkColor(day.weather) }"
+            />
+          </button>
+        </div>
+        <ul v-if="horizonLegend.length > 0" class="m-0 mt-1.5 flex list-none flex-wrap items-center gap-x-2.5 gap-y-0.5 p-0">
+          <li class="text-[0.62rem] font-semibold uppercase tracking-wider text-secondary">Phase</li>
+          <li
+            v-for="item in horizonLegend"
+            :key="item.key"
+            class="inline-flex items-center gap-1 text-[0.62rem] text-secondary"
+          >
+            <span class="h-1.5 w-1.5 shrink-0 rounded-full" :style="{ background: item.color }" />
+            {{ item.label }}
+          </li>
+        </ul>
+      </div>
     </section>
 
     <section v-else class="text-sm leading-snug text-secondary">
@@ -163,12 +336,25 @@ function formatAccess(meters: number | undefined): string | null {
       :coordinates="props.report?.coordinates ?? null"
     />
 
-    <p
+    <div
       v-if="props.report"
-      class="m-0 rounded-lg border border-[#e2dac9] bg-[#fffdf8] px-2.5 py-2 text-[0.82rem] leading-snug"
+      class="rounded-lg border border-[#e2dac9] bg-[#fffdf8] px-2.5 py-2"
     >
-      {{ terrainSummary }}
-    </p>
+      <dl class="m-0 grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1 text-[0.82rem] leading-snug">
+        <dt class="text-secondary">Lieu</dt>
+        <dd class="m-0 font-semibold">{{ placeSummary }}</dd>
+        <dt class="text-secondary">Marche</dt>
+        <dd class="m-0 font-semibold">{{ walkSummary }}</dd>
+      </dl>
+      <button
+        v-if="canDownloadGpx"
+        type="button"
+        class="mt-2 w-full cursor-pointer rounded-md border border-[#cfc6b1] bg-[#fffdf8] px-2 py-1.5 text-xs font-semibold text-primary"
+        @click="downloadAccessGpx"
+      >
+        Télécharger le GPX
+      </button>
+    </div>
 
     <ExpansionPanel.Group v-model="openPanels" multiple class="flex flex-col gap-2">
       <DisclosureSection
@@ -190,7 +376,7 @@ function formatAccess(meters: number | undefined): string | null {
         v-if="props.report"
         panel="terrain"
         title="Fiche terrain"
-        :preview="terrainSummary"
+        :preview="placeSummary"
       >
         <dl class="m-0 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
           <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Altitude</dt><dd class="m-0 font-semibold">{{ props.report.terrain.elevation }} m</dd></div>
@@ -198,7 +384,7 @@ function formatAccess(meters: number | undefined): string | null {
           <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Exposition</dt><dd class="m-0 font-semibold">{{ props.report.terrain.exposure }}</dd></div>
           <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Couvert</dt><dd class="m-0 font-semibold">{{ props.report.terrain.cover }}</dd></div>
           <div v-if="props.report.terrain.hostTreeCode" class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Essence</dt><dd class="m-0 font-semibold">{{ props.report.terrain.hostTree }}</dd></div>
-          <div v-if="props.report.terrain.canopyCode" class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Densité</dt><dd class="m-0 font-semibold">{{ props.report.terrain.canopy }}</dd></div>
+          <div v-if="terrainDensity" class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Densité</dt><dd class="m-0 font-semibold">{{ terrainDensity }}</dd></div>
           <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5">
             <dt class="text-secondary">Lisière</dt>
             <dd class="m-0 font-semibold">
@@ -208,7 +394,7 @@ function formatAccess(meters: number | undefined): string | null {
           <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Cours d'eau</dt><dd class="m-0 font-semibold">{{ props.report.terrain.waterDistance }} m</dd></div>
           <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5">
             <dt class="text-secondary">Accès</dt>
-            <dd class="m-0 font-semibold">{{ formatAccess(props.report.terrain.accessDistance) ?? 'hors d\'atteinte' }}</dd>
+            <dd class="m-0 font-semibold">{{ formatWalk(props.report) ?? 'hors d\'atteinte' }}</dd>
           </div>
           <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Humidité</dt><dd class="m-0 font-semibold">{{ props.report.terrain.moisture }} / 100</dd></div>
           <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Géologie</dt><dd class="m-0 font-semibold">{{ props.report.terrain.geology }}</dd></div>
@@ -221,8 +407,17 @@ function formatAccess(meters: number | undefined): string | null {
         title="Pourquoi ce score"
         :preview="driversPreview"
       >
+        <p
+          v-if="seasonGateLine"
+          class="mb-3 rounded-md px-2.5 py-2 text-xs leading-snug"
+          :class="props.report.inSeason
+            ? 'border border-[#c5dfc8] bg-[#eef6ef] text-[#2d6a38]'
+            : 'border border-[#e4c9a0] bg-[#fbf3e4] text-[#8a5a12]'"
+        >
+          {{ seasonGateLine }}
+        </p>
         <ul class="m-0 flex list-none flex-col gap-2.5 p-0">
-          <li v-for="criterion in props.report.breakdown" :key="criterion.criterion">
+          <li v-for="criterion in scoredBreakdown" :key="criterion.criterion">
             <div class="mb-1 flex justify-between text-[0.79rem]">
               <span>{{ criterion.label }}</span>
               <span class="font-semibold">{{ Math.round(criterion.value) }}</span>
@@ -303,7 +498,7 @@ function formatAccess(meters: number | undefined): string | null {
           </button>
         </template>
         <p v-else class="m-0 text-xs leading-snug text-secondary">
-          Aucune tache à 90 à moins de 1,5 km d'un chemin joignable en voiture dans la vue.
+          Aucune tache à 90 à moins de 2 km d'une route ou d'un parking dans la vue.
           Décochez « Masquer les zones peu accessibles » pour voir les zones isolées.
         </p>
       </DisclosureSection>

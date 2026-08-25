@@ -67,4 +67,16 @@ enum CanopyClosure: int
     {
         return $this !== self::Unknown;
     }
+
+    /**
+     * Mid-bin percent used when Copernicus TCD is missing. FO is 10–40 %, FF is > 40 %.
+     */
+    public function proxyCoverPercent(): ?int
+    {
+        return match ($this) {
+            self::Open => 25,
+            self::Closed => 70,
+            self::Unknown => null,
+        };
+    }
 }

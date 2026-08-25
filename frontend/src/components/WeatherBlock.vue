@@ -57,10 +57,12 @@ function stormDateLabel(days: number | null | undefined): string {
 }
 
 function weatherTone(weather: Weather): string {
+  if (weather.driedOutAfterSoaking) return 'bg-[#f3e6d2] text-[#7a4e12]'
   const days = weather.flushDaysSince ?? weather.daysSinceSoakingRain
   if (days === null) return 'bg-[#ece7dc] text-[#5a5346]'
   if (weather.flushPhase === 'incubating') return 'bg-[#f3e6d2] text-[#7a4e12]'
-  if (weather.flushPhase === 'starting' || weather.flushPhase === 'peak') return 'bg-[#ddecd8] text-[#1f5c32]'
+  if (weather.flushPhase === 'starting') return 'bg-[#ddecd8] text-[#1f5c32]'
+  if (weather.flushPhase === 'peak') return 'bg-[#fde8d8] text-[#9a3412]'
   if (weather.flushPhase === 'declining' || weather.flushPhase === 'lingering') return 'bg-[#efe6c8] text-[#6a5310]'
   if (days <= 3) return 'bg-[#f3e6d2] text-[#7a4e12]'
   if (days <= 6) return 'bg-[#efe6c8] text-[#6a5310]'
@@ -101,6 +103,14 @@ function weatherTone(weather: Weather): string {
           <strong>{{ weather.recentRain }} mm</strong>
           tombés {{ recentWindow }}
           <span class="text-secondary"> — pluie de litière récente</span>
+        </li>
+        <li v-if="weather.flushDaysSince != null && weather.rainSinceSoaking != null">
+          <strong>{{ weather.rainSinceSoaking }} mm</strong>
+          depuis l'orage suivi
+          <span class="text-secondary"> — ce qui est tombé après l'épisode, pas le cumul 26 j</span>
+        </li>
+        <li v-if="weather.driedOutAfterSoaking" class="font-semibold text-[#8a5a12]">
+          Assèchement trop rapide après l'épisode : la pousse est compromise.
         </li>
         <li>
           <strong>{{ weather.temperature }} °C</strong> ce jour-là ·
