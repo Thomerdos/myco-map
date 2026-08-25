@@ -30,8 +30,9 @@ Parcours nominal pour lancer la carte grenobloise telle qu'elle est livrée.
 
 - [Docker](https://docs.docker.com/get-docker/) avec Compose v2
 
-PHP, Composer et Node restent dans les images. Python 3 (et éventuellement GDAL) ne
-servent que pour les scripts optionnels `geologie` et `tcd`.
+Rien d'autre sur la machine hôte : PHP, Composer, Node, Python et GDAL tournent dans
+des images. Les commandes `./dev.sh bdforet`, `geologie`, `tcd` et `precompute`
+passent aussi par Docker.
 
 ### 2. Cloner et démarrer
 
@@ -83,9 +84,10 @@ revanche, après chaque ajout (ou une fois les trois faits), il faut **relancer 
 précalcul** (étape 5) : sinon la carte continue d'utiliser l'ancienne base.
 
 Les fichiers téléchargés restent sur votre disque dans `backend/var/` (souvent des
-centaines de Mo). Ils ne sont **pas** envoyés sur Git. Les commandes ci-dessous
-supposent que vous êtes à la racine du dépôt (`myco-map/`) dans un terminal, Docker
-déjà capable de tourner.
+centaines de Mo). Ils ne sont **pas** envoyés sur Git. Les commandes `./dev.sh bdforet`,
+`geologie` et `tcd` s'exécutent **dans Docker** (aucune install Python/GDAL sur l'hôte) :
+placez-vous à la racine du dépôt (`myco-map/`) avec Docker disponible. Le premier
+`geologie` / `tcd` construit une petite image d'outils si besoin.
 
 Pour la zone grenobloise, on prend trois départements : **Isère (038)**, **Drôme (026)**
 et **Savoie (073)**. Si vous adaptez une autre région française, remplacez ces numéros
@@ -127,7 +129,9 @@ cd ../../..
 Objectif : indiquer si le sol est plutôt calcaire, siliceux ou mixte (utile pour
 discriminer morille / trompette et girolle). Données du BRGM.
 
-1. Créez le dossier, téléchargez un ZIP par département, puis convertissez :
+1. Créez le dossier, téléchargez un ZIP par département, puis convertissez.
+   `backend/var/geologie/source` peut être un **lien symbolique** vers un dossier ailleurs
+   (Docker reçoit une copie / lien dur temporaire sous `_inputs`) :
 
 ```bash
 mkdir -p backend/var/geologie/source
