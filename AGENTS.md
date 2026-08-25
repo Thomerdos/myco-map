@@ -179,7 +179,7 @@ plafonne donc celle du modèle entier.
 
 **Grille à 50 m** (`app.area.cell_size`). C'est le plafond utile face à BD Forêt (≥ 0,5 ha).
 Le même pas affine pente, exposition, courbure, distances lisière / eau / accès et donc le score.
-Une archive 100 m n'est plus compatible : rejouer `./dev.sh precompute` puis `export-data`.
+Après un changement d'emprise ou de maille : `./dev.sh precompute` puis `export-data`.
 
 **Deux sources, choisies à l'exécution.** `BdForetLandCover` est l'implémentation câblée sur le
 port `LandCoverSource`. Elle lit BD Forêt V2 si le jeu converti existe, et délègue sinon à
