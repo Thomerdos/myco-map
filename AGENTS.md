@@ -5,10 +5,15 @@ Notes de travail pour les agents (et les humains) qui interviennent sur ce dép�
 ## Conventions du dépôt
 
 - **Langue** : tout ce qui est visible par l'utilisateur (libellés, explications, messages de commit, README) est en **français**. Les commentaires de code sont en **anglais**.
-- **Backend** : Symfony 7 / PHP 8.5, domaine sans dépendance à l'infrastructure (`backend/src/Domain`), adaptateurs dans `backend/src/Infrastructure`.
+- **Backend** : Symfony 7 / PHP 8.4, domaine sans dépendance à l'infrastructure (`backend/src/Domain`), adaptateurs dans `backend/src/Infrastructure`.
 - **Frontend** : Vue 3 + Vite + Leaflet, TypeScript strict. Police unique : Inter.
-- **Vérification avant commit** : `cd frontend && npm run build` (inclut `vue-tsc`). Le backend n'a pas de suite de tests.
-- **Serveurs de dev** : `./dev.sh backend` (port 8765) et `./dev.sh frontend` (port 43123).
+- **Installation** : Docker Compose (image `php:8.4-cli`). Le code est monté en volume.
+- **Emprise** : `app.area.*` dans `backend/config/services.yaml` (Grenoble par défaut). Toute
+  autre région : mêmes clés + recopier les bornes dans `scripts/fetch_tcd.py`, **ne pas**
+  restaurer l'archive grenobloise, télécharger BD Forêt / Charm-50 / TCD de *cette* emprise,
+  `./dev.sh precompute`. Détail dans le README (« Adapter à une autre région »).
+- **Vérification avant commit** : `docker compose exec frontend npm run build` (inclut `vue-tsc`). Le backend n'a pas de suite de tests.
+- **Serveurs de dev** : `docker compose up` — API port 8765, interface port 43123.
 - **AGENTS.md** : à tenir à jour après chaque changement de modèle, de source, de grille, de
   libellé métier ou de sémantique UI (poids, délais, accès, ce que l'interface montre).
 

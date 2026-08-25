@@ -1,6 +1,9 @@
 # Données précalculées
 
-`myco-terrain-50m.sqlite.gz` contient la couche statique du modèle pour toute la zone d'étude, afin de pouvoir lancer l'application sans refaire les téléchargements.
+`myco-terrain-50m.sqlite.gz` est la couche statique **de l'emprise grenobloise**
+(Chartreuse / Belledonne / Vercors). Elle permet de lancer l'app sans refaire les
+téléchargements. Une autre région ne peut pas s'en servir : changer `app.area.*` puis
+précalculer (README, « Adapter à une autre région »).
 
 ## Contenu
 
@@ -38,11 +41,8 @@ Sans ce re-précalcul, l'API répondra que les données ne sont pas prêtes (ou 
 
 ## Restauration
 
-```bash
-./dev.sh restore-data
-```
-
-Ou manuellement :
+`./dev.sh restore-data` décompresse l'archive (le premier `docker compose up` le fait
+aussi tout seul). Ou manuellement :
 
 ```bash
 mkdir -p backend/var/data
@@ -56,10 +56,13 @@ c90387d141acd715c189981616acdb2077a1a3b9e891cc2d38f210a468173e26
 ```
 
 La base décompressée pèse environ 150 Mo.
+
 ## Régénération
 
 ```bash
-cd backend && php bin/console app:precompute
+./dev.sh precompute
+# ou, pile déjà lancée :
+docker compose exec backend php bin/console app:precompute
 ```
 
 Puis pour republier l'archive :

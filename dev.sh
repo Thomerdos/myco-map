@@ -34,16 +34,16 @@ install_all() {
 
 precompute() {
   ensure_env
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    echo "Précalcul via Docker (PHP 8.4)."
+    (cd "${ROOT}" && docker compose run --rm --no-deps backend php bin/console app:precompute "$@")
+    return
+  fi
   if php -m 2>/dev/null | grep -qi '^pdo_sqlite$'; then
     (cd "${ROOT}/backend" && php bin/console app:precompute "$@")
     return
   fi
-  if command -v docker >/dev/null 2>&1; then
-    echo "Extension PHP pdo_sqlite absente — précalcul via Docker."
-    (cd "${ROOT}" && docker compose run --rm --no-deps backend php bin/console app:precompute "$@")
-    return
-  fi
-  echo "pdo_sqlite est requis. Installez php-sqlite3 (sudo apt install php-sqlite3) ou Docker." >&2
+  echo "Docker (recommandé) ou php-sqlite3 est requis pour le précalcul." >&2
   exit 1
 }
 
