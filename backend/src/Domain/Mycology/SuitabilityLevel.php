@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Mycology;
 
 /**
- * Thresholds follow the potential legend. 90 is the first band that is actually rare
- * (~0–2 % of a typical viewport); 78–87 is common decent forest and must not read as
- * "go now". They stay aligned with the stops of LayerLegendFactory.
+ * Thresholds follow the potential legend. 90 is the hotspot cut for secteurs;
+ * the Feu colour/opacity ramp is linear from 70–100 (visual only).
  */
 enum SuitabilityLevel: string
 {
