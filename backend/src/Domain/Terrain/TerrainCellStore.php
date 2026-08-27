@@ -32,6 +32,7 @@ interface TerrainCellStore
      *     access_distance: int,
      *     canopy_cover: ?int,
      *     canopy_height: ?int,
+     *     canopy_gap: ?int,
      *     soil_ph: ?float,
      *     park: int,
      *     path: int
@@ -47,6 +48,13 @@ interface TerrainCellStore
      * @return iterable<int, array{column: int, row: int, profile: TerrainProfile, park?: int, path?: int}>
      */
     public function readWindow(GridWindow $window): iterable;
+
+    /**
+     * Lightweight park/path/slope mask for access tracing (no TerrainProfile).
+     *
+     * @return iterable<int, array{column: int, row: int, slope: float, park: int, path: int}>
+     */
+    public function readAccessMask(GridWindow $window): iterable;
 
     public function findNearest(Coordinates $point): ?TerrainProfile;
 }

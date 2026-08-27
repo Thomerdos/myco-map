@@ -4,6 +4,8 @@ nelmio_cors:
         allow_origin: ['%env(CORS_ALLOW_ORIGIN)%']
         allow_methods: ['GET', 'OPTIONS']
         allow_headers: ['Content-Type']
+        # So the browser Network tab can read the profiler link from API responses.
+        expose_headers: ['X-Debug-Token', 'X-Debug-Token-Link']
         max_age: 3600
     paths:
         '^/api/': ~

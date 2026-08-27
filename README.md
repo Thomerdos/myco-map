@@ -31,8 +31,8 @@ Parcours nominal pour lancer la carte grenobloise telle qu'elle est livrée.
 - [Docker](https://docs.docker.com/get-docker/) avec Compose v2
 
 Rien d'autre sur la machine hôte : PHP, Composer, Node, Python et GDAL tournent dans
-des images. Les commandes `./dev.sh bdforet`, `geologie`, `tcd`, `soilph` et `precompute`
-passent aussi par Docker.
+des images. Les commandes `./dev.sh bdforet`, `geologie`, `tcd`, `soilph`, `rgealti`,
+`lidar` et `precompute` passent aussi par Docker.
 
 ### 2. Cloner et démarrer
 
@@ -70,8 +70,8 @@ améliorent nettement le score (essences, calcaire / acide, densité réelle du 
 
 ### 4. Couches optionnelles (recommandé)
 
-**De quoi s'agit-il ?** Au démarrage, Myco Map a déjà le relief et la météo. Trois jeux
-de données publics, téléchargeables à la main, affinent le reste :
+**De quoi s'agit-il ?** Au démarrage, Myco Map a déjà le relief (Terrarium) et la météo.
+Des jeux de données publics affinent le reste :
 
 | Couche | À quoi ça sert | Sans elle |
 |---|---|---|
@@ -79,20 +79,24 @@ de données publics, téléchargeables à la main, affinent le reste :
 | **Charm-50** (BRGM) | Repli calcaire / siliceux si pas de pH | Substrat indéterminé partout |
 | **pH du sol** (EcoDataCube) | pH H₂O continu 0–20 cm (30 m) | Repli Charm-50 |
 | **TCD** (Copernicus) | Densité du peuplement en % de couvert | Estimation grossière ouverte / fermée |
+| **RGE ALTI** (IGN) | MNT 5 m (pente / exposition / humidité topo) | Terrarium AWS (~13 m/px) |
+| **LIDAR HD** (IGN) | Hauteur de canopée (CHM) pour la densité | Repli TCD / FO-FF |
 
 Vous pouvez en installer **une seule** ou plusieurs. L'ordre n'importe pas. En
 revanche, après chaque ajout (ou une fois les couches faites), il faut **relancer le
 précalcul** (étape 5) : sinon la carte continue d'utiliser l'ancienne base.
 
 Les fichiers téléchargés restent sur votre disque dans `backend/var/` (souvent des
-centaines de Mo). Ils ne sont **pas** envoyés sur Git. Les commandes `./dev.sh bdforet`,
-`geologie`, `tcd` et `soilph` s'exécutent **dans Docker** (aucune install Python/GDAL sur
-l'hôte) : placez-vous à la racine du dépôt (`myco-map/`) avec Docker disponible. Le premier
-`geologie` / `tcd` / `soilph` construit une petite image d'outils si besoin.
+centaines de Mo à quelques Go). Ils ne sont **pas** envoyés sur Git. Les commandes
+`./dev.sh bdforet`, `geologie`, `tcd`, `soilph`, `rgealti` et `lidar` s'exécutent
+**dans Docker** (aucune install Python/GDAL sur l'hôte) : placez-vous à la racine du
+dépôt (`myco-map/`) avec Docker disponible. Le premier `geologie` / `tcd` / `soilph` /
+`rgealti` construit une petite image d'outils si besoin.
 
 Pour la zone grenobloise, on prend trois départements : **Isère (038)**, **Drôme (026)**
 et **Savoie (073)**. Si vous adaptez une autre région française, remplacez ces numéros
-par les codes départements qui recouvrent *votre* carte.
+par les codes départements qui recouvrent *votre* carte (`D0xx`, ex. `D074` pour la
+Haute-Savoie).
 
 #### a. Couvert forestier précis — BD Forêt V2 (France)
 
@@ -198,6 +202,88 @@ Les bornes géographiques du téléchargement sont dans
 [`scripts/fetch_tcd.py`](scripts/fetch_tcd.py). Si vous changez la zone de la carte
 (section suivante), mettez-les à jour pour qu'elles correspondent.
 
+#### e. Relief précis — RGE ALTI (IGN, France)
+
+Objectif : remplacer le DEM mondial Terrarium (~13 m/px) par le **MNT IGN** à 5 m
+(meilleure pente, exposition, courbure / humidité topographique). Licence Ouverte,
+sans compte. L'API utilisée est celle de la
+[Géoplateforme — téléchargement](https://www.data.gouv.fr/dataservices/api-geoplateforme-telechargement)
+(`data.geopf.fr`), ressource `RGEALTI`.
+
+```bash
+./dev.sh rgealti
+```
+
+Par défaut : résolution **5 m**, départements **026 / 038 / 073** (~1,6 Go d'archives
+compressées, plus l'extraction temporaire). Le script :
+
+1. interroge `https://data.geopf.fr/telechargement/resource/RGEALTI` ;
+2. télécharge les `.7z` ASC dans `backend/var/elevation/rge-source/archives/` ;
+3. les extrait, filtre les dalles qui intersectent l'emprise, recadre sur la grille 50 m.
+
+Résultat : `backend/var/elevation/rge-alti.bin` (+ `.json`). Puis `./dev.sh precompute`.
+
+**Adapter à une autre zone :**
+
+| Variable / fichier | Rôle |
+|---|---|
+| `RGE_ALTI_ZONES=D038,D074` | Départements Géoplateforme (`D` + code INSEE sur 3 chiffres) |
+| `RGE_ALTI_RESOLUTION=5M` | `5M` (recommandé) ou `1M` (plusieurs Go / dép., inutile pour 50 m) |
+| `SOUTH`…`EAST` dans [`scripts/fetch_rge_alti.py`](scripts/fetch_rge_alti.py) et [`scripts/convert_rge_alti.py`](scripts/convert_rge_alti.py) | Même rectangle que `app.area.*` dans `services.yaml` |
+
+Exemples :
+
+```bash
+# Haute-Savoie + Isère, 5 m
+RGE_ALTI_ZONES=D038,D074 ./dev.sh rgealti
+
+# Reconversion seule (archives déjà téléchargées / extraites)
+./dev.sh rgealti --manifest
+
+# Dallages déjà en GeoTIFF / ASC (hors API)
+./dev.sh rgealti chemin/vers/dalle.tif …
+```
+
+Sans `rge-alti.bin`, le précalcul garde Terrarium. Ne pas prendre le 1 m « pour voir » :
+sur trois départements cela dépasse facilement 10 Go. Après conversion réussie, vous
+pouvez supprimer `backend/var/elevation/rge-source/extracted/` (~7 Go) et même les
+archives `.7z` : `./dev.sh rgealti --manifest` ne suffit plus alors, il faudra
+retélécharger avec `./dev.sh rgealti`.
+
+#### f. Hauteur de canopée — LIDAR HD (IGN, optionnel)
+
+Objectif : affiner le critère densité avec une **hauteur de canopée** (MNH = MNS − MNT)
+plutôt que le seul TCD. Les dalles 1 km viennent de l'index WFS
+`IGNF_MNH-LIDAR-HD:dalle` (Géoplateforme), téléchargées en version légère (~25 m/px)
+pour rester raisonnable en disque.
+
+Couverture recommandée autour de Grenoble (Chartreuse, Vercors, Belledonne) :
+
+```bash
+# 1. Lister les GetMap WMS des 3 massifs (+ fusion éventuelle d'une ancienne liste)
+python3 scripts/fetch_lidar_mnh_links.py backend/var/lidar/source/liens-massifs.txt \
+  --massifs chartreuse,vercors,belledonne
+
+# 2. Télécharger (~5 m/px recommandé pour Chartreuse/Vercors/Belledonne)
+python3 scripts/download_lidar_links.py \
+  backend/var/lidar/source/liens-massifs.txt backend/var/lidar/tiles \
+  --pixel-size 200 --workers 8
+
+# 3. Mosaïque 50 m + précalcul
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD/scripts:/scripts:ro" \
+  -v "$PWD/backend/var/lidar:/lidar" \
+  ghcr.io/osgeo/gdal:ubuntu-small-latest \
+  python3 /scripts/convert_lidar_chm.py /lidar/canopy-height /lidar/tiles
+./dev.sh precompute
+```
+
+Massifs connus dans le script : `chartreuse`, `vercors`, `belledonne`, ou `study`
+(toute l'emprise). Les bornes WGS84 sont en tête de
+[`scripts/fetch_lidar_mnh_links.py`](scripts/fetch_lidar_mnh_links.py) — à aligner avec
+`services.yaml` si vous changez de zone. Sans mosaïque `canopy-height.bin`, la densité
+reste sur le TCD / FO-FF.
+
 ### 5. Relancer le précalcul
 
 Quand au moins une des conversions ci-dessus a réussi, **reconstruisez la base** pour que
@@ -217,6 +303,7 @@ les relances suivantes sont plus rapides. Rechargez ensuite la page dans le navi
 
 Vous n'avez en général **pas** besoin de `./dev.sh export-data` : cette commande ne sert
 qu'à republier l'archive `data/myco-terrain-50m.sqlite.gz` pour le dépôt Git.
+
 ## Adapter à une autre région
 
 Le clone restaure par défaut la base **grenobloise**. Pour une autre emprise :
@@ -224,12 +311,16 @@ Le clone restaure par défaut la base **grenobloise**. Pour une autre emprise :
 1. **Bornes** dans [`backend/config/services.yaml`](backend/config/services.yaml) :
    `app.area.name`, `south`, `west`, `north`, `east`, `center_lat`, `center_lng`, `zoom`.
    Recopier les mêmes `south` / `west` / `north` / `east` dans
-   [`scripts/fetch_tcd.py`](scripts/fetch_tcd.py).
+   [`scripts/fetch_tcd.py`](scripts/fetch_tcd.py),
+   [`scripts/fetch_rge_alti.py`](scripts/fetch_rge_alti.py),
+   [`scripts/convert_rge_alti.py`](scripts/convert_rge_alti.py)
+   (et les autres `scripts/fetch_*.py` / `convert_*.py` de l'emprise).
 2. **Oublier Grenoble** : supprimer `backend/var/data/myco.sqlite` (et `-wal` / `-shm`).
    Ne pas lancer `./dev.sh restore-data`.
 3. **Couches locales** : mêmes commandes que ci-dessus, avec les départements (France) ou
-   tuiles TCD (Europe) de *votre* rectangle. Hors France : OSM + DEM + météo suffisent ;
-   BD Forêt et Charm-50 n'existent pas.
+   tuiles TCD (Europe) de *votre* rectangle. Pour RGE ALTI :
+   `RGE_ALTI_ZONES=D0xx,D0yy ./dev.sh rgealti`. Hors France : OSM + DEM + météo
+   suffisent ; BD Forêt, Charm-50 et RGE ALTI n'existent pas.
 4. **Précalcul** : `./dev.sh precompute`. Grenoble ≈ 2,3 millions de mailles à 50 m ;
    une emprise plus large prend plus longtemps.
 5. **Profils d'espèces** : les tranches d'altitude de
@@ -329,7 +420,9 @@ fournie dans `data/` au premier démarrage. Seule la météo se rafraîchit d'el
 | [IGN BD Forêt® V2](https://geoservices.ign.fr/bdforet) | France | Essence et densité | Manuel puis précalcul |
 | [BRGM Charm-50](https://infoterre.brgm.fr/formulaire/telechargement-cartes-geologiques-departementales-150-000-bd-charm-50) | France | Substrat (repli) | Manuel puis précalcul |
 | [EcoDataCube pH](https://s3.ecodatacube.eu/arco/stac/catalog.json) | Europe | pH H₂O 30 m | `./dev.sh soilph` puis précalcul |
-| [Copernicus Tree Cover Density](https://land.copernicus.eu/en/products/high-resolution-layer-forests-and-tree-cover/tree-cover-density-2018-present-raster-10-m-europe-yearly) | Europe | Couvert 0–100 % | Manuel puis précalcul |
+| [Copernicus Tree Cover Density](https://land.copernicus.eu/en/products/high-resolution-layer-forests-and-tree-cover/tree-cover-density-2018-present-raster-10-m-europe-yearly) | Europe | Couvert 0–100 % | `./dev.sh tcd` puis précalcul |
+| [IGN RGE ALTI®](https://geoservices.ign.fr/rgealti) (API [Géoplateforme](https://data.geopf.fr/telechargement/resource/RGEALTI)) | France | MNT 5 m | `./dev.sh rgealti` puis précalcul |
+| [IGN LIDAR HD](https://geoservices.ign.fr/lidarhd) | France | Hauteur de canopée | `./dev.sh lidar` puis précalcul |
 | OpenTopoMap · OSM · Esri | Monde | Fonds de carte | Navigateur |
 
 Licences et attributions : [`ATTRIBUTION.md`](ATTRIBUTION.md).
@@ -368,6 +461,8 @@ Ports du domaine (`ElevationSampler`, `LandCoverSource`, `GeologySource`,
 | `./dev.sh geologie [zip…]` | Convertit BRGM Charm-50 |
 | `./dev.sh soilph` | Télécharge / convertit EcoDataCube pH |
 | `./dev.sh tcd [tif…]` | Télécharge / convertit Copernicus TCD |
+| `./dev.sh rgealti` | Télécharge / convertit RGE ALTI (MNT 5 m) |
+| `./dev.sh lidar <chm…>` | Convertit un CHM LIDAR HD |
 
 ### API
 

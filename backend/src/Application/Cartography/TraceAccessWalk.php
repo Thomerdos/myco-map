@@ -21,7 +21,8 @@ final readonly class TraceAccessWalk
 {
     private const WINDOW_MARGIN_METERS = 300;
     private const METERS_PER_DEGREE_LATITUDE = 111_320.0;
-    private const MAX_WINDOW_CELLS = 250_000;
+    /** Keep click latency low: full 2.5 km walk mask is too heavy on SQLite. */
+    private const MAX_WINDOW_CELLS = 40_000;
 
     public function __construct(
         private TerrainCellStore $cellStore,
@@ -53,7 +54,10 @@ final readonly class TraceAccessWalk
             return null;
         }
 
-        $window = $grid->windowFor($this->walkBounds($profile->coordinates), self::MAX_WINDOW_CELLS);
+        $window = $grid->windowFor(
+            $this->walkBounds($profile->coordinates, $profile->accessDistanceMeters),
+            self::MAX_WINDOW_CELLS,
+        );
         if ($window === null || $window->step !== 1) {
             return null;
         }
@@ -76,14 +80,14 @@ final readonly class TraceAccessWalk
             $slope[$index] = 0.0;
         }
 
-        foreach ($this->cellStore->readWindow($window) as $cell) {
+        foreach ($this->cellStore->readAccessMask($window) as $cell) {
             $offset = $local->offset(
                 $window->localColumn($cell['column']),
                 $window->localRow($cell['row']),
             );
-            $slope[$offset] = $cell['profile']->slopeDegrees;
-            $park[$offset] = $cell['park'] ?? 0;
-            $path[$offset] = $cell['path'] ?? 0;
+            $slope[$offset] = $cell['slope'];
+            $park[$offset] = $cell['park'];
+            $path[$offset] = $cell['path'];
         }
 
         $destination = $local->offset(
@@ -94,10 +98,12 @@ final readonly class TraceAccessWalk
         return $this->pathAccess->trace($park, $path, $slope, $local, $destination);
     }
 
-    private function walkBounds(Coordinates $point): BoundingBox
+    private function walkBounds(Coordinates $point, int $accessMeters): BoundingBox
     {
-        $meters = AccessThreshold::ALONG_PATH_METERS
-            + AccessThreshold::APPROACH_METERS
+        // Window only needs to cover the known walk budget, not the full 2.5 km
+        // policy radius — that was loading tens of thousands of cells on every click.
+        $budget = AccessThreshold::ALONG_PATH_METERS + AccessThreshold::APPROACH_METERS;
+        $meters = min($budget, max(400, $accessMeters + self::WINDOW_MARGIN_METERS))
             + self::WINDOW_MARGIN_METERS;
         $dLat = $meters / self::METERS_PER_DEGREE_LATITUDE;
         $cos = cos(deg2rad($point->latitude));

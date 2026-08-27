@@ -9,6 +9,7 @@ use App\Domain\Geo\SurveyArea;
 use App\Domain\Terrain\AccessWay;
 use App\Domain\Terrain\CanopyClosure;
 use App\Domain\Terrain\CanopyCoverSource;
+use App\Domain\Terrain\CanopyGapSource;
 use App\Domain\Terrain\CanopyHeightSource;
 use App\Domain\Terrain\ElevationSampler;
 use App\Domain\Terrain\ForestCover;
@@ -26,7 +27,7 @@ use App\Infrastructure\Raster\TerrainDerivatives;
 
 /**
  * Builds the static half of the model once: elevation derivatives, forest cover,
- * geology, soil pH, access, tree-cover density and optional LIDAR canopy height.
+ * geology, soil pH, access, tree-cover density and optional LIDAR canopy height / gaps.
  * Weather stays dynamic at query time.
  */
 final readonly class PrecomputeTerrain
@@ -41,6 +42,7 @@ final readonly class PrecomputeTerrain
         private GeologySource $geology,
         private CanopyCoverSource $canopyCoverSource,
         private CanopyHeightSource $canopyHeightSource,
+        private CanopyGapSource $canopyGapSource,
         private SoilPhSource $soilPhSource,
         private TerrainCellStore $cellStore,
         private PolygonRasterizer $rasterizer,
@@ -75,6 +77,7 @@ final readonly class PrecomputeTerrain
         [$park, $path, $accessWays] = $this->rasterizeAccess($grid, $progress);
         [$canopyCover, $canopyCoverCells] = $this->sampleCanopyCover($grid, $progress);
         [$canopyHeight, $canopyHeightCells] = $this->sampleCanopyHeight($grid, $progress);
+        [$canopyGap, $canopyGapCells] = $this->sampleCanopyGap($grid, $progress);
         [$soilPhTenths, $soilPhCells] = $this->sampleSoilPh($grid, $progress);
 
         $progress->stageStarted('Distances aux lisières et à l\'eau');
@@ -118,6 +121,7 @@ final readonly class PrecomputeTerrain
                 $access,
                 $canopyCover,
                 $canopyHeight,
+                $canopyGap,
                 $soilPhTenths,
                 $park,
                 $path,
@@ -138,6 +142,7 @@ final readonly class PrecomputeTerrain
             accessWays: $accessWays,
             canopyCoverCells: $canopyCoverCells,
             canopyHeightCells: $canopyHeightCells,
+            canopyGapCells: $canopyGapCells,
             soilPhCells: $soilPhCells,
             unavailableChunks: $this->landCover->unavailableChunks(),
             durationSeconds: microtime(true) - $startedAt,
@@ -363,6 +368,25 @@ final readonly class PrecomputeTerrain
     }
 
     /** @return array{0: \SplFixedArray<int>, 1: int} */
+    private function sampleCanopyGap(Grid $grid, PrecomputationProgress $progress): array
+    {
+        $stage = 'Clairières de canopée (LIDAR HD)';
+        $progress->stageStarted($stage);
+
+        $canopyGap = $this->canopyGapSource->sample($grid);
+        $known = 0;
+        for ($i = 0, $total = $grid->cellCount(); $i < $total; $i++) {
+            if ($canopyGap[$i] >= 0) {
+                $known++;
+            }
+        }
+
+        $progress->stageFinished($stage);
+
+        return [$canopyGap, $known];
+    }
+
+    /** @return array{0: \SplFixedArray<int>, 1: int} */
     private function sampleSoilPh(Grid $grid, PrecomputationProgress $progress): array
     {
         $stage = 'pH du sol (EcoDataCube)';
@@ -411,6 +435,7 @@ final readonly class PrecomputeTerrain
      * @param \SplFixedArray<int> $access
      * @param \SplFixedArray<int> $canopyCover
      * @param \SplFixedArray<int> $canopyHeight
+     * @param \SplFixedArray<int> $canopyGap
      * @param \SplFixedArray<int> $soilPhTenths
      * @param \SplFixedArray<int> $park
      * @param \SplFixedArray<int> $path
@@ -418,7 +443,7 @@ final readonly class PrecomputeTerrain
      *     row: int, column: int, latitude: float, longitude: float,
      *     elevation: int, slope: float, aspect: float, curvature: float,
      *     cover: int, edge_distance: int, water_distance: int, geology: int,
-     *     access_distance: int, canopy_cover: ?int, canopy_height: ?int, soil_ph: ?float,
+     *     access_distance: int, canopy_cover: ?int, canopy_height: ?int, canopy_gap: ?int, soil_ph: ?float,
      *     park: int, path: int
      * }>
      */
@@ -434,6 +459,7 @@ final readonly class PrecomputeTerrain
         \SplFixedArray $access,
         \SplFixedArray $canopyCover,
         \SplFixedArray $canopyHeight,
+        \SplFixedArray $canopyGap,
         \SplFixedArray $soilPhTenths,
         \SplFixedArray $park,
         \SplFixedArray $path,
@@ -478,6 +504,7 @@ final readonly class PrecomputeTerrain
                     'access_distance' => $access[$index],
                     'canopy_cover' => $canopyCover[$index] >= 0 ? $canopyCover[$index] : null,
                     'canopy_height' => $canopyHeight[$index] >= 0 ? $canopyHeight[$index] : null,
+                    'canopy_gap' => $canopyGap[$index] >= 0 ? $canopyGap[$index] : null,
                     'soil_ph' => $phTenths >= 0 ? $phTenths / 10.0 : null,
                     'park' => $park[$index],
                     'path' => $path[$index],
