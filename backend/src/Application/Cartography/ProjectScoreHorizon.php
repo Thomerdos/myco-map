@@ -21,7 +21,7 @@ use App\Domain\Weather\WeatherSource;
 final readonly class ProjectScoreHorizon
 {
     public const HORIZON_DAYS = 14;
-    private const MAX_CELLS = 4_000;
+    private const MAX_CELLS = 1_200;
 
     public function __construct(
         private SurveyArea $area,
@@ -73,12 +73,11 @@ final readonly class ProjectScoreHorizon
             $count = 0;
             $best = null;
             foreach ($cells as $entry) {
-                $profile = $entry['profile'];
-                $weather = $weatherField->at($profile->coordinates);
+                // Coarse strip: one area weather for the day, habitat still per cell.
                 $score = $this->calculator->evaluate(
                     $species,
-                    $profile,
-                    $weather,
+                    $entry['profile'],
+                    $weatherAvg,
                     $season,
                     ScoringMode::Moment,
                 );

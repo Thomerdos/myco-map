@@ -18,6 +18,7 @@ final readonly class PrecomputationReport
         public int $accessWays,
         public int $canopyCoverCells,
         public int $canopyHeightCells,
+        public int $canopyGapCells,
         public int $soilPhCells,
         public int $unavailableChunks,
         public float $durationSeconds,

@@ -9,6 +9,8 @@ parameters:
     app.tcd_default_path: '%kernel.project_dir%/var/tcd/canopy-cover.json'
     app.lidar_path: '%env(default:app.lidar_default_path:LIDAR_PATH)%'
     app.lidar_default_path: '%kernel.project_dir%/var/lidar/canopy-height.json'
+    app.lidar_gap_path: '%env(default:app.lidar_gap_default_path:LIDAR_GAP_PATH)%'
+    app.lidar_gap_default_path: '%kernel.project_dir%/var/lidar/canopy-gap.json'
     app.rge_alti_path: '%env(default:app.rge_alti_default_path:RGE_ALTI_PATH)%'
     app.rge_alti_default_path: '%kernel.project_dir%/var/elevation/rge-alti.json'
     app.soilph_path: '%env(default:app.soilph_default_path:SOILPH_PATH)%'
@@ -32,7 +34,7 @@ services:
     App\:
         resource: '../src/'
         exclude:
-            - '../src/Domain/**/{Coordinates,BoundingBox,Grid,GridWindow,SurveyArea,TerrainProfile,Exposure,ForestPolygon,GeologyPolygon,WaterFeature,AccessWay,AccessWalk,StandCode,Species,HarvestWindow,AltitudeBand,SlopeBand,CanopyDensityBand,CanopyHeightBand,PhBand,CriterionScore,SuitabilityScore,SeasonAssessment,FlushClock,WeatherConditions,WeatherField,LayerLegend}.php'
+            - '../src/Domain/**/{Coordinates,BoundingBox,Grid,GridWindow,SurveyArea,TerrainProfile,Exposure,ForestPolygon,GeologyPolygon,WaterFeature,AccessWay,AccessWalk,StandCode,Species,HarvestWindow,AltitudeBand,SlopeBand,CanopyDensityBand,CanopyHeightBand,CanopyGapBand,PhBand,CriterionScore,SuitabilityScore,SeasonAssessment,FlushClock,WeatherConditions,WeatherField,WeatherLattice,LayerLegend}.php'
             - '../src/Application/Cartography/{LayerGridQuery,LayerGridView}.php'
             - '../src/Application/Precomputation/PrecomputationReport.php'
             - '../src/Kernel.php'
@@ -96,6 +98,10 @@ services:
         arguments:
             $datasetPath: '%app.lidar_path%'
 
+    App\Infrastructure\Raster\LidarHdCanopyGapRaster:
+        arguments:
+            $datasetPath: '%app.lidar_gap_path%'
+
     App\Infrastructure\Raster\EcoDataCubeSoilPhRaster:
         arguments:
             $datasetPath: '%app.soilph_path%'
@@ -114,7 +120,16 @@ services:
     App\Domain\Terrain\GeologySource: '@App\Infrastructure\Geology\Charm50Geology'
     App\Domain\Terrain\CanopyCoverSource: '@App\Infrastructure\Raster\TreeCoverDensityRaster'
     App\Domain\Terrain\CanopyHeightSource: '@App\Infrastructure\Raster\LidarHdCanopyHeightRaster'
+    App\Domain\Terrain\CanopyGapSource: '@App\Infrastructure\Raster\LidarHdCanopyGapRaster'
     App\Domain\Terrain\SoilPhSource: '@App\Infrastructure\Raster\EcoDataCubeSoilPhRaster'
     App\Domain\Terrain\TerrainCellStore: '@App\Infrastructure\Persistence\DbalTerrainCellStore'
     App\Domain\Weather\WeatherSource: '@App\Infrastructure\Weather\OpenMeteoWeather'
     App\Domain\Mycology\SpeciesCatalog: '@App\Infrastructure\Mycology\InMemorySpeciesCatalog'
+
+    App\Application\Precomputation\PrecomputeTerrain:
+        arguments:
+            $canopyCoverSource: '@App\Infrastructure\Raster\TreeCoverDensityRaster'
+            $canopyHeightSource: '@App\Infrastructure\Raster\LidarHdCanopyHeightRaster'
+            $canopyGapSource: '@App\Infrastructure\Raster\LidarHdCanopyGapRaster'
+            $soilPhSource: '@App\Infrastructure\Raster\EcoDataCubeSoilPhRaster'
+            $elevationSampler: '@App\Infrastructure\Elevation\CompositeElevationSampler'

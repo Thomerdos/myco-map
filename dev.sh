@@ -482,29 +482,70 @@ lidar() {
   echo "Relancez ./dev.sh precompute pour écrire la colonne canopy_height."
 }
 
-# Converts IGN RGE ALTI DEM tiles onto the 50 m grid (preferred elevation source).
+# Downloads (Géoplateforme) and/or converts IGN RGE ALTI onto the 50 m grid.
+# Preferred elevation source at precompute; falls back to Terrarium if absent.
 rgealti() {
   local prefix="${ROOT}/backend/var/elevation/rge-alti"
   local source_dir="${ROOT}/backend/var/elevation/rge-source"
+  local manifest="${source_dir}/manifest.json"
   local -a docker_args=(/elevation/rge-alti)
+  local archive extract_rel extract_dir
 
   require_docker
-  mkdir -p "${source_dir}" "$(dirname "${prefix}")"
-
-  ensure_tools_image
-  docker run --rm --user "${DOCKER_USER}" \
-    -v "${ROOT}:/work" \
-    -w /work \
-    "${TOOLS_IMAGE}" \
-    python3 scripts/fetch_rge_alti.py /work/backend/var/elevation/rge-source
+  mkdir -p "${source_dir}/archives" "${source_dir}/extracted" "$(dirname "${prefix}")"
 
   if [[ $# -eq 0 ]]; then
-    echo "Usage: ./dev.sh rgealti <dalle.tif> [autres…]   ou   ./dev.sh rgealti --manifest …" >&2
-    echo "Téléchargez RGE ALTI sur https://geoservices.ign.fr/rgealti" >&2
-    exit 1
-  fi
+    echo "Téléchargement RGE ALTI (API Géoplateforme, 5 m, dép. 26/38/73)…"
+    ensure_tools_image
+    docker run --rm --user "${DOCKER_USER}" \
+      -e RGE_ALTI_ZONES="${RGE_ALTI_ZONES:-}" \
+      -e RGE_ALTI_RESOLUTION="${RGE_ALTI_RESOLUTION:-}" \
+      -v "${ROOT}:/work" \
+      -w /work \
+      "${TOOLS_IMAGE}" \
+      python3 scripts/fetch_rge_alti.py /work/backend/var/elevation/rge-source
+    if [[ ! -f "${manifest}" ]]; then
+      echo "Manifeste RGE ALTI absent." >&2
+      exit 1
+    fi
+    # Extract each archive into the path recorded in the manifest.
+    while IFS=$'\t' read -r archive extract_rel; do
+      [[ -n "${archive}" && -n "${extract_rel}" ]] || continue
+      extract_dir="${source_dir}/${extract_rel}"
+      if [[ -d "${extract_dir}" ]] && find "${extract_dir}" -name '*.asc' -print -quit 2>/dev/null | grep -q .; then
+        echo "Déjà extrait : ${extract_rel}"
+        continue
+      fi
+      echo "Extraction $(basename "${archive}") → ${extract_rel}…"
+      extract_archive_docker "${archive}" "${extract_dir}"
+    done < <(
+      python3 - "${manifest}" "${source_dir}" <<'PY'
+import json
+import sys
+from pathlib import Path
 
-  if [[ "${1:-}" == "--manifest" ]]; then
+manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+base = Path(sys.argv[2])
+for product in manifest.get("products") or []:
+    extract = product.get("extracted")
+    if not extract:
+        continue
+    files = product.get("files") or []
+    if not files:
+        path = product.get("path")
+        files = path if isinstance(path, list) else ([path] if path else [])
+    for name in files:
+        path = base / str(name)
+        if path.suffix.lower() in {".7z", ".zip"} and path.is_file():
+            print(f"{path}\t{extract}")
+PY
+    )
+    docker_args+=(--manifest "/elevation/rge-source/manifest.json")
+  elif [[ "${1:-}" == "--manifest" ]]; then
+    if [[ ! -f "${manifest}" ]]; then
+      echo "Manifeste absent : lancez d'abord ./dev.sh rgealti (sans argument)." >&2
+      exit 1
+    fi
     docker_args+=(--manifest "/elevation/rge-source/manifest.json")
   else
     local staging="${ROOT}/backend/var/elevation/_rge_inputs"
@@ -552,7 +593,7 @@ case "${1:-}" in
     echo "  tcd           Télécharge / convertit Copernicus Tree Cover Density (0–100 %)"
     echo "  soilph        Télécharge / convertit EcoDataCube pH du sol (30 m → 50 m)"
     echo "  lidar         Convertit un CHM LIDAR HD IGN (hauteur de canopée, m)"
-    echo "  rgealti       Convertit RGE ALTI (MNT IGN) pour le relief"
+    echo "  rgealti       Télécharge / convertit RGE ALTI (MNT IGN 5 m) pour le relief"
     echo "  backend       Démarre l'API sur http://127.0.0.1:8765"
     echo "  frontend      Démarre l'interface sur http://127.0.0.1:43123"
     echo "  docker        Démarre API + interface via Docker Compose"

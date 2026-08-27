@@ -164,33 +164,46 @@ Ne pas les confondre avec le **J+n de la barre du haut** (jours à partir d'aujo
 
 ### Restantes
 
-1. **Surface terrière encore proxy.** Le critère « Densité du peuplement » lit d'abord la
-   **hauteur de canopée LIDAR HD** (`canopy_height`, `./dev.sh lidar`) si le CHM est là,
-   sinon Copernicus TCD (0–100 %), sinon FO/FF. Ce n'est pas des m²/ha mesurés ; le CHM
-   s'en rapproche. Ne pas utiliser le NDVI Sentinel-2 (sature en hêtraie/pessière fermée).
-2. **pH modélisé, pas mesuré densément.** EcoDataCube (AI4SoilHealth) fournit un pH H₂O
-   30 m (R² ≈ 0,6) ; Charm-50 reste le repli catégoriel. Ce n'est toujours pas un réseau
-   de mesures densément réparties en forêt alpine.
+1. **Surface terrière encore proxy.** Densité = hauteur LIDAR + fraction de clairières
+   (MNH), sinon TCD, sinon FO/FF. Ce n'est pas des m²/ha IFN.
+2. **pH : EcoDataCube + ancrage Charm-50.** Le pH pan-européen (R² ≈ 0,6) est adouci par
+   la géologie locale (72/28) quand les deux sources sont présentes.
 3. **Délais de pousse par espèce non sourcés en revue à comité de lecture.** Voir la note en fin
    de fichier.
 
 ## Hauteur de canopée (LIDAR HD IGN)
 
-Source optionnelle du critère densité (16 %) : CHM = MNS − MNT LIDAR HD
-([geoservices.ign.fr/lidarhd](https://geoservices.ign.fr/lidarhd)). `./dev.sh lidar <chm.tif…>`
-écrit `backend/var/lidar/canopy-height.{bin,json}` (uint8 mètres). Colonne SQLite
-`canopy_height`. Bandes par espèce : `CanopyHeightBand`. Absent → TCD / FO-FF.
+Source optionnelle du critère densité (16 %) : MNH = MNS − MNT LIDAR HD
+([geoservices.ign.fr/lidarhd](https://geoservices.ign.fr/lidarhd)). Index WFS
+`IGNF_MNH-LIDAR-HD:dalle` → `scripts/fetch_lidar_mnh_links.py` (presets Chartreuse /
+Vercors / Belledonne) → `scripts/download_lidar_links.py` (`--pixel-size 200` ≈ 5 m) →
+`convert_lidar_chm.py` écrit `canopy-height` **et** `canopy-gap` (clairières % < 3 m).
+Colonnes SQLite `canopy_height` / `canopy_gap`. Densité = hauteur × structure de trous
+(`CanopyHeightBand` + `CanopyGapBand`). Absent → TCD / FO-FF.
 
 ## MNT IGN (RGE ALTI)
 
-Relief préféré au précalcul quand `backend/var/elevation/rge-alti.{bin,json}` existe
-(`./dev.sh rgealti <dalle.tif…>`). Sinon Terrarium AWS (~13 m/px). Améliore pente /
-exposition / courbure (humidité topographique).
+Relief préféré au précalcul quand `backend/var/elevation/rge-alti.{bin,json}` existe.
+Sinon Terrarium AWS (~13 m/px). Améliore pente / exposition / courbure (humidité
+topographique).
 
-## Météo (Open-Meteo, grille 7×7)
+```bash
+./dev.sh rgealti
+```
 
-Lattice **7×7** sur l'emprise de requête (49 points, IDW) pour laisser apparaître les
-ombres pluviométriques. Toujours moins fin qu'AROME, mais nettement mieux que l'ancien 3×3.
+Télécharge les packages **5 m ASC** des départements `D026` / `D038` / `D073` via l'API
+Géoplateforme (`https://data.geopf.fr/telechargement/resource/RGEALTI`, documentée sur
+[data.gouv.fr](https://www.data.gouv.fr/dataservices/api-geoplateforme-telechargement)),
+extrait les dalles, filtre l'emprise, écrit la mosaïque 50 m. Variables :
+`RGE_ALTI_ZONES`, `RGE_ALTI_RESOLUTION` (`5M` | `1M`). Bornes à garder alignées avec
+`services.yaml` dans `scripts/fetch_rge_alti.py` et `scripts/convert_rge_alti.py`.
+`--manifest` = reconversion seule ; des `.tif` / `.asc` en arguments restent possibles.
+
+## Météo (Open-Meteo + Météo-France seamless / AROME)
+
+Lattice **13×13** (169 points, lots de 40) avec `models=meteofrance_seamless` (AROME
+~1,5–2,5 km sur la France + ARPEGE). Cache `weather_raw_v4_*`. Moins fin qu'un radar
+local, nettement mieux que l'ancien 7×7 générique.
 
 ## pH du sol (EcoDataCube / AI4SoilHealth)
 

@@ -42,6 +42,7 @@ final readonly class Species
         public ?CanopyDensityBand $canopyDensity = null,
         public ?PhBand $phOptimum = null,
         public ?CanopyHeightBand $canopyHeight = null,
+        public ?CanopyGapBand $canopyGap = null,
     ) {
     }
 
@@ -74,14 +75,15 @@ final readonly class Species
     }
 
     /**
-     * Prefers LIDAR HD canopy height when known, then Copernicus TCD percent, else FO/FF.
-     * Height is closer to stand structure / basal-area proxies than cover fraction alone.
+     * Prefers LIDAR HD canopy height (+ gap structure when known), then Copernicus TCD, else FO/FF.
+     * Height approximates stand maturity; gap fraction captures clairières / futaie irrégulière.
      */
     public function standDensitySuitability(
         ForestCover $cover,
         CanopyClosure $canopy,
         ?int $canopyCoverPercent = null,
         ?int $canopyHeightMeters = null,
+        ?int $canopyGapPercent = null,
     ): float {
         if (!$cover->isForest()) {
             return $this->requiresForest ? 0.08 : 0.55;
@@ -92,8 +94,14 @@ final readonly class Species
                 closedFloor: $this->requiresForest ? 0.62 : 0.50,
                 sparseFloor: $this->requiresForest ? 0.22 : 0.60,
             );
+            $score = $band->suitability((float) $canopyHeightMeters);
+            if ($canopyGapPercent !== null) {
+                $gapBand = $this->canopyGap ?? new CanopyGapBand();
+                // Height dominates; gaps refine (clairière vs futaie fermée continue).
+                $score = 0.72 * $score + 0.28 * $gapBand->suitability((float) $canopyGapPercent);
+            }
 
-            return max(0.0, min(1.0, $band->suitability((float) $canopyHeightMeters)));
+            return max(0.0, min(1.0, $score));
         }
 
         if ($canopyCoverPercent !== null) {
@@ -117,14 +125,20 @@ final readonly class Species
     }
 
     /**
-     * Prefers continuous EcoDataCube pH when known; otherwise Charm-50 substrate classes.
+     * Prefers continuous EcoDataCube pH when known; Charm-50 softens alpine mismatches.
      */
     public function geologySuitability(Substrate $substrate, ?float $soilPh = null): float
     {
         if ($soilPh !== null) {
             $band = $this->phOptimum ?? new PhBand();
+            $fromPh = $band->suitability($soilPh);
+            if ($substrate !== Substrate::Unknown && isset($this->geologyAffinity[$substrate->value])) {
+                $fromGeo = $this->geologyAffinity[$substrate->value];
+                // Local geology (Charm-50) pulls when the pan-European pH model disagrees.
+                return max(0.0, min(1.0, 0.72 * $fromPh + 0.28 * $fromGeo));
+            }
 
-            return max(0.0, min(1.0, $band->suitability($soilPh)));
+            return max(0.0, min(1.0, $fromPh));
         }
 
         if (isset($this->geologyAffinity[$substrate->value])) {

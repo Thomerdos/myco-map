@@ -63,7 +63,7 @@ final readonly class RenderLayerGrid
 
         foreach ($this->cellStore->readWindow($window) as $entry) {
             $profile = $entry['profile'];
-            $weather = $weatherField->at($profile->coordinates);
+            $weather = $weatherField->nearest($profile->coordinates);
             $potential = $this->calculator->evaluate($species, $profile, $weather, $season, $mode);
             $waterMillimetres = $query->layer === MapLayer::Weather
                 ? $this->calculator->waterSupplyMillimetres($weather)
@@ -250,6 +250,7 @@ final readonly class RenderLayerGrid
                 'canopyCode' => $profile->canopy->value,
                 'canopyCover' => $profile->canopyCoverPercent,
                 'canopyHeight' => $profile->canopyHeightMeters,
+                'canopyGap' => $profile->canopyGapPercent,
                 'accessMeters' => $minAccess,
             ];
         }

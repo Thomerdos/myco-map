@@ -59,7 +59,7 @@ final class PrecomputeCommand extends Command
         }
 
         $io->success(sprintf(
-            '%s mailles de %d m (%d × %d) en %.0f s (pic mémoire PHP %.0f Mo) — %d tuiles de relief, %d polygones forestiers, %d formations géologiques, %d éléments hydro, %d voies d\'accès, %d mailles TCD, %d mailles LIDAR, %d mailles pH',
+            '%s mailles de %d m (%d × %d) en %.0f s (pic mémoire PHP %.0f Mo) — %d tuiles de relief, %d polygones forestiers, %d formations géologiques, %d éléments hydro, %d voies d\'accès, %d mailles TCD, %d mailles LIDAR, %d mailles clairières, %d mailles pH',
             number_format($report->cells, 0, ',', ' '),
             $report->cellSizeMeters,
             $report->columns,
@@ -73,6 +73,7 @@ final class PrecomputeCommand extends Command
             $report->accessWays,
             $report->canopyCoverCells,
             $report->canopyHeightCells,
+            $report->canopyGapCells,
             $report->soilPhCells,
         ));
 

@@ -8,6 +8,7 @@ use App\Domain\Geo\BoundingBox;
 use App\Domain\Geo\Coordinates;
 use App\Domain\Weather\WeatherConditions;
 use App\Domain\Weather\WeatherField;
+use App\Domain\Weather\WeatherLattice;
 use App\Domain\Weather\WeatherSource;
 use Psr\Log\LoggerInterface;
 use Symfony\Contracts\Cache\CacheInterface;
@@ -15,13 +16,14 @@ use Symfony\Contracts\Cache\ItemInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
- * Open-Meteo sampled on a 7×7 lattice across the area (was 3×3) so Chartreuse /
- * Belledonne rain shadows stay visible. One download covers past history plus two
- * weeks of forecast so scores can be projected forward day by day.
+ * Open-Meteo with Météo-France seamless (AROME ~1.5–2.5 km over France) sampled on a
+ * 13×13 lattice so Chartreuse / Vercors / Belledonne rain shadows stay visible.
+ * Past history + two weeks of forecast so scores can be projected forward day by day.
  */
-final readonly class OpenMeteoWeather implements WeatherSource
+final class OpenMeteoWeather implements WeatherSource
 {
-    private const SAMPLES_PER_AXIS = 7;
+    private const SAMPLES_PER_AXIS = 13;
+    private const BATCH_SIZE = 40;
     private const TRIGGER_WINDOW_START = -14;
     private const TRIGGER_WINDOW_END = -5;
     private const RECENT_WINDOW_START = -4;
@@ -32,6 +34,9 @@ final readonly class OpenMeteoWeather implements WeatherSource
     private const PAST_DAYS = 31;
     /** Enough to project Score to J+14 from "today" in the response. */
     private const FORECAST_DAYS = 16;
+
+    /** @var array<string, WeatherField> */
+    private array $fields = [];
 
     public function __construct(
         private HttpClientInterface $httpClient,
@@ -47,11 +52,15 @@ final readonly class OpenMeteoWeather implements WeatherSource
             ->setTimezone($timezone)
             ->setTime(12, 0);
 
-        $cacheKey = sprintf(
-            'weather_raw_v3_%s_%s',
-            md5(serialize($bounds->toArray())),
-            (new \DateTimeImmutable('now', $timezone))->format('Y-m-d-H'),
-        );
+        $boundsKey = md5(serialize($bounds->toArray()));
+        $hourKey = (new \DateTimeImmutable('now', $timezone))->format('Y-m-d-H');
+        $fieldKey = sprintf('weather_field_v5_%s_%s_%s', $boundsKey, $hourKey, $asOf->format('Y-m-d'));
+
+        if (isset($this->fields[$fieldKey])) {
+            return $this->fields[$fieldKey];
+        }
+
+        $cacheKey = sprintf('weather_raw_v4_%s_%s', $boundsKey, $hourKey);
 
         /** @var array{samples: list<array{lat: float, lng: float, daily: array<string, mixed>, hourly: array<string, mixed>}>, degraded: bool} $payload */
         $payload = $this->cache->get($cacheKey, function (ItemInterface $item) use ($bounds): array {
@@ -62,31 +71,44 @@ final readonly class OpenMeteoWeather implements WeatherSource
             return $downloaded;
         });
 
-        $samples = [];
-        foreach ($payload['samples'] as $sample) {
-            $values = $this->aggregate($sample['daily'], $sample['hourly'] ?? [], $asOf);
-            $daysRaw = $values['daysSinceSoaking'] ?? -1.0;
-            $samples[] = [
-                'point' => new Coordinates($sample['lat'], $sample['lng']),
-                'conditions' => new WeatherConditions(
-                    triggerRainMillimetres: $values['triggerRain'],
-                    recentRainMillimetres: $values['recentRain'],
-                    fortnightRainMillimetres: $values['fortnightRain'],
-                    meanTemperatureCelsius: $values['temperature'],
-                    relativeHumidityPercent: $values['humidity'],
-                    soilMoisture: $values['soilMoisture'],
-                    daysSinceSoakingRain: $daysRaw < 0 ? null : (int) $daysRaw,
-                    soakingRainMillimetres: $values['soakingRain'] ?? 0.0,
-                    accumulatedRainMillimetres: $values['accumulatedRain'] ?? 0.0,
-                    precedingDryMillimetres: $values['precedingRain'] ?? 0.0,
-                    soakingEvents: $values['soakingEvents'] ?? [],
-                    rainSinceSoakingMillimetres: $values['rainSinceSoaking'] ?? 0.0,
-                    litterSoilMoisture: $values['litterSoilMoisture'] ?? 0.30,
-                ),
-            ];
-        }
+        // Aggregated field per calendar day: layer/location/projection often share the
+        // same raw download but need many as-of dates (horizon strip).
+        /** @var WeatherField $field */
+        $field = $this->cache->get($fieldKey, function (ItemInterface $item) use ($payload, $bounds, $asOf): WeatherField {
+            $item->expiresAfter($payload['degraded'] ? 120 : 3600 * 2);
 
-        return new WeatherField($samples, $payload['degraded']);
+            $samples = [];
+            foreach ($payload['samples'] as $sample) {
+                $values = $this->aggregate($sample['daily'], $sample['hourly'] ?? [], $asOf);
+                $daysRaw = $values['daysSinceSoaking'] ?? -1.0;
+                $samples[] = [
+                    'point' => new Coordinates($sample['lat'], $sample['lng']),
+                    'conditions' => new WeatherConditions(
+                        triggerRainMillimetres: $values['triggerRain'],
+                        recentRainMillimetres: $values['recentRain'],
+                        fortnightRainMillimetres: $values['fortnightRain'],
+                        meanTemperatureCelsius: $values['temperature'],
+                        relativeHumidityPercent: $values['humidity'],
+                        soilMoisture: $values['soilMoisture'],
+                        daysSinceSoakingRain: $daysRaw < 0 ? null : (int) $daysRaw,
+                        soakingRainMillimetres: $values['soakingRain'] ?? 0.0,
+                        accumulatedRainMillimetres: $values['accumulatedRain'] ?? 0.0,
+                        precedingDryMillimetres: $values['precedingRain'] ?? 0.0,
+                        soakingEvents: $values['soakingEvents'] ?? [],
+                        rainSinceSoakingMillimetres: $values['rainSinceSoaking'] ?? 0.0,
+                        litterSoilMoisture: $values['litterSoilMoisture'] ?? 0.30,
+                    ),
+                ];
+            }
+
+            $lattice = \count($samples) === self::SAMPLES_PER_AXIS ** 2
+                ? new WeatherLattice($bounds, self::SAMPLES_PER_AXIS)
+                : null;
+
+            return new WeatherField($samples, $payload['degraded'], $lattice);
+        });
+
+        return $this->fields[$fieldKey] = $field;
     }
 
     /**
@@ -114,50 +136,56 @@ final readonly class OpenMeteoWeather implements WeatherSource
         }
 
         try {
-            $response = $this->httpClient->request('GET', 'https://api.open-meteo.com/v1/forecast', [
-                'query' => [
-                    'latitude' => implode(',', $latitudes),
-                    'longitude' => implode(',', $longitudes),
-                    'daily' => 'precipitation_sum,temperature_2m_mean',
-                    'hourly' => 'relative_humidity_2m,soil_moisture_0_to_1cm,soil_moisture_3_to_9cm',
-                    'past_days' => self::PAST_DAYS,
-                    'forecast_days' => self::FORECAST_DAYS,
-                    'timezone' => 'Europe/Paris',
-                ],
-                'timeout' => 45,
-            ]);
+            $samples = [];
+            $total = \count($latitudes);
+            for ($offset = 0; $offset < $total; $offset += self::BATCH_SIZE) {
+                $batchLat = \array_slice($latitudes, $offset, self::BATCH_SIZE);
+                $batchLng = \array_slice($longitudes, $offset, self::BATCH_SIZE);
+                $response = $this->httpClient->request('GET', 'https://api.open-meteo.com/v1/forecast', [
+                    'query' => [
+                        'latitude' => implode(',', $batchLat),
+                        'longitude' => implode(',', $batchLng),
+                        'daily' => 'precipitation_sum,temperature_2m_mean',
+                        'hourly' => 'relative_humidity_2m,soil_moisture_0_to_1cm,soil_moisture_3_to_9cm',
+                        'past_days' => self::PAST_DAYS,
+                        'forecast_days' => self::FORECAST_DAYS,
+                        'timezone' => 'Europe/Paris',
+                        // AROME (+ ARPEGE) over France — orographic rain shadows.
+                        'models' => 'meteofrance_seamless',
+                    ],
+                    'timeout' => 60,
+                ]);
 
-            $status = $response->getStatusCode();
-            if ($status !== 200) {
-                $this->logger->warning('Open-Meteo indisponible', ['status' => $status]);
+                $status = $response->getStatusCode();
+                if ($status !== 200) {
+                    $this->logger->warning('Open-Meteo indisponible', ['status' => $status, 'offset' => $offset]);
 
-                return $this->fallback($bounds);
+                    return $this->fallback($bounds);
+                }
+
+                $payload = $response->toArray(false);
+                $locations = isset($payload['daily']) ? [$payload] : $payload;
+                if (!\is_array($locations)) {
+                    return $this->fallback($bounds);
+                }
+
+                foreach ($locations as $index => $location) {
+                    if (!\is_array($location) || !isset($location['daily']['precipitation_sum'])) {
+                        continue;
+                    }
+                    $globalIndex = $offset + (int) $index;
+                    $samples[] = [
+                        'lat' => (float) ($location['latitude'] ?? $latitudes[$globalIndex] ?? $bounds->center()->latitude),
+                        'lng' => (float) ($location['longitude'] ?? $longitudes[$globalIndex] ?? $bounds->center()->longitude),
+                        'daily' => $location['daily'],
+                        'hourly' => \is_array($location['hourly'] ?? null) ? $location['hourly'] : [],
+                    ];
+                }
             }
-
-            $payload = $response->toArray(false);
         } catch (\Throwable $exception) {
             $this->logger->warning('Open-Meteo indisponible', ['error' => $exception->getMessage()]);
 
             return $this->fallback($bounds);
-        }
-
-        $locations = isset($payload['daily']) ? [$payload] : $payload;
-        if (!\is_array($locations)) {
-            return $this->fallback($bounds);
-        }
-
-        $samples = [];
-        foreach ($locations as $index => $location) {
-            if (!\is_array($location) || !isset($location['daily']['precipitation_sum'])) {
-                continue;
-            }
-
-            $samples[] = [
-                'lat' => (float) ($location['latitude'] ?? $latitudes[$index] ?? $bounds->center()->latitude),
-                'lng' => (float) ($location['longitude'] ?? $longitudes[$index] ?? $bounds->center()->longitude),
-                'daily' => $location['daily'],
-                'hourly' => \is_array($location['hourly'] ?? null) ? $location['hourly'] : [],
-            ];
         }
 
         return $samples === []
