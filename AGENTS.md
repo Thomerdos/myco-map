@@ -94,6 +94,11 @@ l'intersection rare (densité TCD optimale × hôte × couvert × substrat/pH), 
 et un `best` qui ne colle plus au plafond. Légende / seuils 90 **non recalés** tant que la
 nouvelle distribution n'est pas mesurée.
 
+**Re-challenge squeeze sans compression (27 août 2026).** Même emprise Chartreuse,
+`mode=habitat`, cèpe, `accessible=0`, DB `data-local` (TCD + pH) : `average=62,9`,
+`best=96,3`, **193** mailles ≥ 90 (~1,1 %). La compression artificielle a été retirée ;
+prochaines gains attendus via LIDAR HD / MNT IGN / météo plus fine.
+
 **Pas de compression artificielle du score.** Un `compressUpperBand` a été essayé puis retiré
 (août 2026) : trop opaque et trop dur à caler. La discrimination reste sur les profils
 (densité × hôte × pH) et les prochaines sources (LIDAR HD, MNT IGN).
