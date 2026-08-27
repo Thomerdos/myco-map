@@ -82,6 +82,18 @@ géologie (+4) et lisière (+3) — les leviers qui classent les mailles, pas la
 - Morille `mode=moment` : **toutes** les mailles à 38, libellé « À éviter ». Garde-fou OK.
 - Légende / `SuitabilityLevel` **non recalés** : le 90 est plus rare, pas déplacé.
 
+**Excellence squeeze densité + affinités (août 2026).** Objectif : que ≥ 90 reste
+l'intersection rare (densité TCD optimale × hôte × couvert × substrat/pH), pas le plateau
+« bonne forêt ». Changements dans `InMemorySpeciesCatalog` + repli FO/FF de `Species` :
+
+- Optima TCD resserrés (ex. cèpe 50–70 → **55–65**), `closedFloor` baissé (~0,76 → **0,66**).
+- Plafonds couvert / hôte / géologie comprimés (plus de 1,0 ; meilleurs hôtes ~0,90–0,94).
+- Repli sans TCD : FO ouvert 0,92 → 0,85 ; FF fermé 0,78 → 0,66.
+
+À re-challenger sur Chartreuse (`mode=habitat`, cèpe) : viser clairement moins de mailles ≥ 90
+et un `best` qui ne colle plus au plafond. Légende / seuils 90 **non recalés** tant que la
+nouvelle distribution n'est pas mesurée.
+
 **Note sur le poids météo.** Dans les modèles publiés, la météo explique l'essentiel de la
 variabilité **interannuelle**. Ici la carte est spatiale et à date fixe : la météo est quasi
 uniforme sur une emprise, donc un poids élevé déplace toute la carte sans discriminer les
