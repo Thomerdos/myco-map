@@ -9,7 +9,8 @@ Notes de travail pour les agents (et les humains) qui interviennent sur ce dép�
 - **Frontend** : Vue 3 + Vite + Leaflet, TypeScript strict. Police unique : Inter.
 - **Installation** : Docker Compose uniquement (PHP 8.4, Node, et les scripts
   `bdforet` / `geologie` / `tcd` / `soilph` / `precompute` via images Docker). Rien à
-  installer sur l'hôte hors Docker.
+  installer sur l'hôte hors Docker. `./dev.sh precompute` force `APP_ENV=prod`
+  (`--no-debug`) pour éviter le surcoût Symfony debug.
 - **Emprise** : `app.area.*` dans `backend/config/services.yaml` (Grenoble par défaut). Toute
   autre région : mêmes clés + recopier les bornes dans `scripts/fetch_tcd.py`, **ne pas**
   restaurer l'archive grenobloise, télécharger BD Forêt / Charm-50 / TCD de *cette* emprise,
