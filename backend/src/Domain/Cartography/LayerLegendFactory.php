@@ -51,12 +51,15 @@ final readonly class LayerLegendFactory
                 ['value' => 80, 'label' => 'Fermé', 'color' => '#2e7d4f'],
                 ['value' => 100, 'label' => '100 %', 'color' => '#123524'],
             ]),
+            // Diverging acid→alkaline (RdYlBu-like): orange/red vs blue so Chartreuse
+            // limestone and Belledonne granite separate on a forest basemap. Stops hug
+            // the EcoDataCube range (~5–7.6) so the mid band is not a flat beige wash.
             MapLayer::Geology => new LayerLegend($layer->label(), 'pH', false, [
-                ['value' => 4.5, 'label' => 'Acide', 'color' => '#8b5a3c'],
-                ['value' => 5.5, 'label' => '5,5', 'color' => '#c4a35a'],
-                ['value' => 6.5, 'label' => 'Neutre', 'color' => '#e8e4d9'],
-                ['value' => 7.5, 'label' => 'Basique', 'color' => '#d4c48a'],
-                ['value' => 8.2, 'label' => 'Calcaire', 'color' => '#f0e6b8'],
+                ['value' => 5.0, 'label' => 'Acide', 'color' => '#b2182b'],
+                ['value' => 5.8, 'label' => '5,8', 'color' => '#ef8a62'],
+                ['value' => 6.5, 'label' => 'Neutre', 'color' => '#f7f7f7'],
+                ['value' => 7.2, 'label' => 'Basique', 'color' => '#67a9cf'],
+                ['value' => 7.8, 'label' => 'Calcaire', 'color' => '#2166ac'],
             ]),
             MapLayer::Moisture => new LayerLegend($layer->label(), null, false, [
                 ['value' => 0, 'label' => 'Drainant', 'color' => '#d8c9a3'],
