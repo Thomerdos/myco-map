@@ -4,7 +4,13 @@ Notes de travail pour les agents (et les humains) qui interviennent sur ce dép�
 
 ## Conventions du dépôt
 
-- **Langue** : tout ce qui est visible par l'utilisateur (libellés, explications, messages de commit, README) est en **français**. Les commentaires de code sont en **anglais**.
+- **Langue** : tout ce qui est visible par l'utilisateur (libellés, explications, corps des
+  messages de commit, README) est en **français**. Les commentaires de code sont en
+  **anglais**. Les **types** Conventional Commits restent en anglais (`feat`, `fix`, …).
+- **Commits** : [Conventional Commits](https://www.conventionalcommits.org/) —
+  `type: description` (description en français). Types usuels : `feat`, `fix`, `perf`,
+  `refactor`, `docs`, `build`, `ci`, `style`, `chore`. Sujet sur la première ligne, corps
+  optionnel après une ligne vide. Ex. `perf: accélérer le lookup météo sur la grille`.
 - **Backend** : Symfony 7 / PHP 8.4, domaine sans dépendance à l'infrastructure (`backend/src/Domain`), adaptateurs dans `backend/src/Infrastructure`.
 - **Frontend** : Vue 3 + Vite + Leaflet, TypeScript strict. Police unique : Inter.
 - **Installation** : Docker Compose uniquement (PHP 8.4, Node, et les scripts
