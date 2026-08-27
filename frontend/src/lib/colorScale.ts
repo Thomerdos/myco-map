@@ -53,8 +53,8 @@ export function createColorScale(legend: Legend): (value: number) => Rgb {
 const FADE_FLOOR = 0.04
 
 /**
- * Opacity for the potential mask: nearly invisible under 70, then a linear rise
- * to the tip so 72 / 85 / 95 separate evenly (no cliff at 90).
+ * Opacity for the potential mask: soft yellow–red wash 70–90, then a frank cliff
+ * at 90 so violet/fuchsia excellence patches dominate.
  */
 export function createOpacityRamp(legend: Legend): (value: number) => number {
   const tip = legend.stops[legend.stops.length - 1]?.value ?? 100
@@ -64,8 +64,12 @@ export function createOpacityRamp(legend: Legend): (value: number) => number {
       const t = Math.max(0, Math.min(1, value / 70))
       return FADE_FLOOR + 0.12 * t * t
     }
-    const t = Math.max(0, Math.min(1, (value - 70) / Math.max(1, tip - 70)))
-    return 0.28 + 0.68 * t
+    if (value < 90) {
+      const t = (value - 70) / 20
+      return 0.30 + 0.25 * t
+    }
+    const t = Math.max(0, Math.min(1, (value - 90) / Math.max(1, tip - 90)))
+    return 0.88 + 0.10 * t
   }
 }
 

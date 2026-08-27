@@ -2,7 +2,7 @@ import type { Legend, Weather } from '../types'
 import { createColorScale } from './colorScale'
 
 /**
- * Same stops as LayerLegendFactory::potentialLegend (« Feu » linéaire 70–100).
+ * Same stops as LayerLegendFactory::potentialLegend (jaune→rouge, puis fuchsia ≥ 90).
  */
 const POTENTIAL_LEGEND: Legend = {
   title: '',
@@ -12,13 +12,14 @@ const POTENTIAL_LEGEND: Legend = {
   stops: [
     { value: 0, label: 'À éviter', color: '#0c0e14' },
     { value: 60, label: '', color: '#1e2430' },
-    { value: 70, label: '70', color: '#8b5e12' },
-    { value: 75, label: '', color: '#b8730a' },
-    { value: 80, label: '80', color: '#d98900' },
-    { value: 85, label: 'Correct', color: '#f0a000' },
-    { value: 90, label: '90', color: '#ff6b1a' },
-    { value: 95, label: 'Prometteur', color: '#dc2626' },
-    { value: 100, label: 'Top', color: '#fff5e6' },
+    { value: 70, label: '70', color: '#eab308' },
+    { value: 75, label: '', color: '#f59e0b' },
+    { value: 80, label: '80', color: '#f97316' },
+    { value: 85, label: 'Correct', color: '#ea580c' },
+    { value: 90, label: '90', color: '#dc2626' },
+    { value: 93, label: 'Prometteur', color: '#c026d3' },
+    { value: 96, label: '96', color: '#e879f9' },
+    { value: 100, label: 'Top', color: '#fce7f3' },
   ],
 }
 
@@ -35,13 +36,14 @@ export function roundedScore(score: number | null): number | null {
 }
 
 /**
- * Warm ink aligned with the Feu ramp: amber from 70, orange from 85, red from 95.
+ * Ink on cream paper: warm below 90, frank magenta for excellence.
  */
 export function scoreInk(score: number | null): string {
   const n = roundedScore(score)
   if (n === null) return '#6a6153'
-  if (n >= 95) return '#b91c1c'
-  if (n >= 85) return '#ea580c'
+  if (n >= 96) return '#a21caf'
+  if (n >= 90) return '#c026d3'
+  if (n >= 80) return '#c2410c'
   if (n >= 70) return '#a16207'
   return '#2b261f'
 }
@@ -51,14 +53,14 @@ export function scoreColor(score: number): string {
 }
 
 export function criterionColor(value: number): string {
-  if (value >= 85) return '#ea580c'
+  if (value >= 90) return '#c026d3'
+  if (value >= 80) return '#ea580c'
   if (value >= 70) return '#a16207'
   if (value >= 40) return '#78716c'
-  if (value >= 20) return '#57534e'
   return '#5b5f6b'
 }
 
-/** Sparkline fill across the visible Feu band (70–100). */
+/** Sparkline fill across the visible band (70–100). */
 export function projectionMeterPercent(score: number | null): number {
   const n = roundedScore(score)
   if (n === null) return 0
