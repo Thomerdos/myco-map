@@ -56,8 +56,9 @@ function sectorScoreLabel(sector: Sector): string {
 }
 
 function iconScale(score: number): string {
-  if (score >= 96) return '1.35'
-  if (score >= 92) return '1.15'
+  if (score >= 95) return '1.35'
+  if (score >= 90) return '1.20'
+  if (score >= 85) return '1.08'
   return '0.95'
 }
 
@@ -79,11 +80,11 @@ function buildKml(grid: LayerGrid): string {
       <name>${score}</name>
       <Style>
         <IconStyle>
-          <color>ffd326c0</color>
+          <color>ff1a6bff</color>
           <scale>${iconScale(score)}</scale>
         </IconStyle>
         <LabelStyle>
-          <color>ffd326c0</color>
+          <color>ff1a6bff</color>
           <scale>1.2</scale>
         </LabelStyle>
       </Style>

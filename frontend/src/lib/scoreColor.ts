@@ -2,7 +2,7 @@ import type { Legend, Weather } from '../types'
 import { createColorScale } from './colorScale'
 
 /**
- * Same stops as LayerLegendFactory::potentialLegend so UI ink matches the mask.
+ * Same stops as LayerLegendFactory::potentialLegend (« Feu » linéaire 70–100).
  */
 const POTENTIAL_LEGEND: Legend = {
   title: '',
@@ -10,13 +10,15 @@ const POTENTIAL_LEGEND: Legend = {
   categorical: false,
   emphasiseTop: true,
   stops: [
-    { value: 0, label: 'À éviter', color: '#14161e' },
-    { value: 40, label: 'Faible', color: '#2a3142' },
-    { value: 62, label: 'Moyen', color: '#4a5568' },
-    { value: 78, label: 'Correct', color: '#ffc01a' },
-    { value: 86, label: '', color: '#ffd24d' },
-    { value: 90, label: 'Prometteur', color: '#c026d3' },
-    { value: 96, label: 'Exceptionnel', color: '#ff4ef0' },
+    { value: 0, label: 'À éviter', color: '#0c0e14' },
+    { value: 60, label: '', color: '#1e2430' },
+    { value: 70, label: '70', color: '#8b5e12' },
+    { value: 75, label: '', color: '#b8730a' },
+    { value: 80, label: '80', color: '#d98900' },
+    { value: 85, label: 'Correct', color: '#f0a000' },
+    { value: 90, label: '90', color: '#ff6b1a' },
+    { value: 95, label: 'Prometteur', color: '#dc2626' },
+    { value: 100, label: 'Top', color: '#fff5e6' },
   ],
 }
 
@@ -33,13 +35,14 @@ export function roundedScore(score: number | null): number | null {
 }
 
 /**
- * High-contrast ink for scores on cream paper. Magenta only for hotspots (≥ 90),
- * matching the mask. Gold from the map ramp is unreadable at text size.
+ * Warm ink aligned with the Feu ramp: amber from 70, orange from 85, red from 95.
  */
 export function scoreInk(score: number | null): string {
   const n = roundedScore(score)
   if (n === null) return '#6a6153'
-  if (n >= 90) return '#c026d3'
+  if (n >= 95) return '#b91c1c'
+  if (n >= 85) return '#ea580c'
+  if (n >= 70) return '#a16207'
   return '#2b261f'
 }
 
@@ -48,18 +51,18 @@ export function scoreColor(score: number): string {
 }
 
 export function criterionColor(value: number): string {
-  if (value >= 80) return '#c026d3'
-  if (value >= 60) return '#b45309'
-  if (value >= 40) return '#7e22ce'
+  if (value >= 85) return '#ea580c'
+  if (value >= 70) return '#a16207'
+  if (value >= 40) return '#78716c'
   if (value >= 20) return '#57534e'
   return '#5b5f6b'
 }
 
-/** Sparkline fill, stretched across the 70–100 band so 88 vs 95 stays readable. */
+/** Sparkline fill across the visible Feu band (70–100). */
 export function projectionMeterPercent(score: number | null): number {
   const n = roundedScore(score)
   if (n === null) return 0
-  return Math.max(10, Math.min(100, ((n - 70) / 30) * 100))
+  return Math.max(8, Math.min(100, ((n - 70) / 30) * 100))
 }
 
 /** Phase marks: peak is warm so it separates from teal “pousse”; no map magenta. */
