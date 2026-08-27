@@ -83,6 +83,7 @@ final readonly class InspectLocation
                 'canopy' => $profile->canopy->label(),
                 'canopyCode' => $profile->canopy->value,
                 'canopyCover' => $profile->canopyCoverPercent,
+                'canopyHeight' => $profile->canopyHeightMeters,
                 'edgeDistance' => $profile->edgeDistanceMeters,
                 'waterDistance' => $profile->waterDistanceMeters,
                 'accessDistance' => $profile->accessDistanceMeters,

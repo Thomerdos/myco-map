@@ -41,6 +41,7 @@ final readonly class Species
         public array $geologyAffinity = [],
         public ?CanopyDensityBand $canopyDensity = null,
         public ?PhBand $phOptimum = null,
+        public ?CanopyHeightBand $canopyHeight = null,
     ) {
     }
 
@@ -73,16 +74,26 @@ final readonly class Species
     }
 
     /**
-     * Continuous tree-cover percent (Copernicus TCD) when known; otherwise BD Forêt FO/FF.
-     * Intermediate cover is closer to published basal-area optima (~15–20 m²/ha).
+     * Prefers LIDAR HD canopy height when known, then Copernicus TCD percent, else FO/FF.
+     * Height is closer to stand structure / basal-area proxies than cover fraction alone.
      */
     public function standDensitySuitability(
         ForestCover $cover,
         CanopyClosure $canopy,
         ?int $canopyCoverPercent = null,
+        ?int $canopyHeightMeters = null,
     ): float {
         if (!$cover->isForest()) {
             return $this->requiresForest ? 0.08 : 0.55;
+        }
+
+        if ($canopyHeightMeters !== null) {
+            $band = $this->canopyHeight ?? new CanopyHeightBand(
+                closedFloor: $this->requiresForest ? 0.62 : 0.50,
+                sparseFloor: $this->requiresForest ? 0.22 : 0.60,
+            );
+
+            return max(0.0, min(1.0, $band->suitability((float) $canopyHeightMeters)));
         }
 
         if ($canopyCoverPercent !== null) {

@@ -249,6 +249,7 @@ final readonly class RenderLayerGrid
                 'canopy' => $profile->canopy->shortLabel(),
                 'canopyCode' => $profile->canopy->value,
                 'canopyCover' => $profile->canopyCoverPercent,
+                'canopyHeight' => $profile->canopyHeightMeters,
                 'accessMeters' => $minAccess,
             ];
         }

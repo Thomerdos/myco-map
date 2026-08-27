@@ -438,6 +438,94 @@ soilph() {
   echo "Relancez ./dev.sh precompute pour écrire la colonne soil_ph."
 }
 
+# Converts a LIDAR HD canopy-height model (CHM, metres) onto the 50 m grid.
+lidar() {
+  local prefix="${ROOT}/backend/var/lidar/canopy-height"
+  local source_dir="${ROOT}/backend/var/lidar/source"
+  local -a docker_args=(/lidar/canopy-height)
+
+  require_docker
+  mkdir -p "${source_dir}" "$(dirname "${prefix}")"
+
+  ensure_tools_image
+  docker run --rm --user "${DOCKER_USER}" \
+    -v "${ROOT}:/work" \
+    -w /work \
+    "${TOOLS_IMAGE}" \
+    python3 scripts/fetch_lidar_chm.py /work/backend/var/lidar/source
+
+  if [[ $# -eq 0 ]]; then
+    echo "Usage: ./dev.sh lidar <chm.tif> [autres…]   ou   ./dev.sh lidar --manifest …" >&2
+    echo "Téléchargez MNS/MNT LIDAR HD sur https://geoservices.ign.fr/lidarhd (CHM = MNS−MNT)." >&2
+    exit 1
+  fi
+
+  if [[ "${1:-}" == "--manifest" ]]; then
+    docker_args+=(--manifest "/lidar/source/manifest.json")
+  else
+    local staging="${ROOT}/backend/var/lidar/_inputs"
+    mkdir -p "${staging}"
+    for source in "$@"; do
+      cp -a "${source}" "${staging}/"
+      docker_args+=("/lidar/_inputs/$(basename "${source}")")
+    done
+  fi
+
+  echo "Recadrage CHM LIDAR via Docker (GDAL)…"
+  docker_rm_rf "${prefix}.bin"
+  docker_rm_rf "${prefix}.json"
+  docker_gdal \
+    -v "${ROOT}/scripts:/scripts:ro" \
+    -v "${ROOT}/backend/var/lidar:/lidar" \
+    -- \
+    python3 /scripts/convert_lidar_chm.py "${docker_args[@]}"
+  echo "Relancez ./dev.sh precompute pour écrire la colonne canopy_height."
+}
+
+# Converts IGN RGE ALTI DEM tiles onto the 50 m grid (preferred elevation source).
+rgealti() {
+  local prefix="${ROOT}/backend/var/elevation/rge-alti"
+  local source_dir="${ROOT}/backend/var/elevation/rge-source"
+  local -a docker_args=(/elevation/rge-alti)
+
+  require_docker
+  mkdir -p "${source_dir}" "$(dirname "${prefix}")"
+
+  ensure_tools_image
+  docker run --rm --user "${DOCKER_USER}" \
+    -v "${ROOT}:/work" \
+    -w /work \
+    "${TOOLS_IMAGE}" \
+    python3 scripts/fetch_rge_alti.py /work/backend/var/elevation/rge-source
+
+  if [[ $# -eq 0 ]]; then
+    echo "Usage: ./dev.sh rgealti <dalle.tif> [autres…]   ou   ./dev.sh rgealti --manifest …" >&2
+    echo "Téléchargez RGE ALTI sur https://geoservices.ign.fr/rgealti" >&2
+    exit 1
+  fi
+
+  if [[ "${1:-}" == "--manifest" ]]; then
+    docker_args+=(--manifest "/elevation/rge-source/manifest.json")
+  else
+    local staging="${ROOT}/backend/var/elevation/_rge_inputs"
+    mkdir -p "${staging}"
+    for source in "$@"; do
+      cp -a "${source}" "${staging}/"
+      docker_args+=("/elevation/_rge_inputs/$(basename "${source}")")
+    done
+  fi
+
+  echo "Recadrage RGE ALTI via Docker (GDAL)…"
+  docker_rm_rf "${prefix}.bin"
+  docker_rm_rf "${prefix}.json"
+  docker_gdal \
+    -v "${ROOT}/scripts:/scripts:ro" \
+    -v "${ROOT}/backend/var/elevation:/elevation" \
+    -- \
+    python3 /scripts/convert_rge_alti.py "${docker_args[@]}"
+  echo "Relancez ./dev.sh precompute : le relief préférera RGE ALTI à Terrarium."
+}
+
 case "${1:-}" in
   install) install_all ;;
   precompute) shift; precompute "$@" ;;
@@ -447,11 +535,13 @@ case "${1:-}" in
   geologie) shift; geologie "$@" ;;
   tcd) shift; tcd "$@" ;;
   soilph) shift; soilph "$@" ;;
+  lidar) shift; lidar "$@" ;;
+  rgealti) shift; rgealti "$@" ;;
   backend) backend ;;
   frontend) frontend ;;
   docker) docker_up ;;
   *)
-    echo "Usage: ./dev.sh [install|restore-data|precompute|export-data|bdforet|geologie|tcd|soilph|backend|frontend|docker]"
+    echo "Usage: ./dev.sh [install|restore-data|precompute|export-data|bdforet|geologie|tcd|soilph|lidar|rgealti|backend|frontend|docker]"
     echo
     echo "  install       Installe les dépendances PHP et JS"
     echo "  restore-data  Restaure la base précalculée depuis data/"
@@ -461,6 +551,8 @@ case "${1:-}" in
     echo "  geologie      Convertit BRGM Charm-50 pour le substrat"
     echo "  tcd           Télécharge / convertit Copernicus Tree Cover Density (0–100 %)"
     echo "  soilph        Télécharge / convertit EcoDataCube pH du sol (30 m → 50 m)"
+    echo "  lidar         Convertit un CHM LIDAR HD IGN (hauteur de canopée, m)"
+    echo "  rgealti       Convertit RGE ALTI (MNT IGN) pour le relief"
     echo "  backend       Démarre l'API sur http://127.0.0.1:8765"
     echo "  frontend      Démarre l'interface sur http://127.0.0.1:43123"
     echo "  docker        Démarre API + interface via Docker Compose"
