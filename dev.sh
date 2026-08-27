@@ -438,6 +438,135 @@ soilph() {
   echo "Relancez ./dev.sh precompute pour écrire la colonne soil_ph."
 }
 
+# Converts a LIDAR HD canopy-height model (CHM, metres) onto the 50 m grid.
+lidar() {
+  local prefix="${ROOT}/backend/var/lidar/canopy-height"
+  local source_dir="${ROOT}/backend/var/lidar/source"
+  local -a docker_args=(/lidar/canopy-height)
+
+  require_docker
+  mkdir -p "${source_dir}" "$(dirname "${prefix}")"
+
+  ensure_tools_image
+  docker run --rm --user "${DOCKER_USER}" \
+    -v "${ROOT}:/work" \
+    -w /work \
+    "${TOOLS_IMAGE}" \
+    python3 scripts/fetch_lidar_chm.py /work/backend/var/lidar/source
+
+  if [[ $# -eq 0 ]]; then
+    echo "Usage: ./dev.sh lidar <chm.tif> [autres…]   ou   ./dev.sh lidar --manifest …" >&2
+    echo "Téléchargez MNS/MNT LIDAR HD sur https://geoservices.ign.fr/lidarhd (CHM = MNS−MNT)." >&2
+    exit 1
+  fi
+
+  if [[ "${1:-}" == "--manifest" ]]; then
+    docker_args+=(--manifest "/lidar/source/manifest.json")
+  else
+    local staging="${ROOT}/backend/var/lidar/_inputs"
+    mkdir -p "${staging}"
+    for source in "$@"; do
+      cp -a "${source}" "${staging}/"
+      docker_args+=("/lidar/_inputs/$(basename "${source}")")
+    done
+  fi
+
+  echo "Recadrage CHM LIDAR via Docker (GDAL)…"
+  docker_rm_rf "${prefix}.bin"
+  docker_rm_rf "${prefix}.json"
+  docker_gdal \
+    -v "${ROOT}/scripts:/scripts:ro" \
+    -v "${ROOT}/backend/var/lidar:/lidar" \
+    -- \
+    python3 /scripts/convert_lidar_chm.py "${docker_args[@]}"
+  echo "Relancez ./dev.sh precompute pour écrire la colonne canopy_height."
+}
+
+# Downloads (Géoplateforme) and/or converts IGN RGE ALTI onto the 50 m grid.
+# Preferred elevation source at precompute; falls back to Terrarium if absent.
+rgealti() {
+  local prefix="${ROOT}/backend/var/elevation/rge-alti"
+  local source_dir="${ROOT}/backend/var/elevation/rge-source"
+  local manifest="${source_dir}/manifest.json"
+  local -a docker_args=(/elevation/rge-alti)
+  local archive extract_rel extract_dir
+
+  require_docker
+  mkdir -p "${source_dir}/archives" "${source_dir}/extracted" "$(dirname "${prefix}")"
+
+  if [[ $# -eq 0 ]]; then
+    echo "Téléchargement RGE ALTI (API Géoplateforme, 5 m, dép. 26/38/73)…"
+    ensure_tools_image
+    docker run --rm --user "${DOCKER_USER}" \
+      -e RGE_ALTI_ZONES="${RGE_ALTI_ZONES:-}" \
+      -e RGE_ALTI_RESOLUTION="${RGE_ALTI_RESOLUTION:-}" \
+      -v "${ROOT}:/work" \
+      -w /work \
+      "${TOOLS_IMAGE}" \
+      python3 scripts/fetch_rge_alti.py /work/backend/var/elevation/rge-source
+    if [[ ! -f "${manifest}" ]]; then
+      echo "Manifeste RGE ALTI absent." >&2
+      exit 1
+    fi
+    # Extract each archive into the path recorded in the manifest.
+    while IFS=$'\t' read -r archive extract_rel; do
+      [[ -n "${archive}" && -n "${extract_rel}" ]] || continue
+      extract_dir="${source_dir}/${extract_rel}"
+      if [[ -d "${extract_dir}" ]] && find "${extract_dir}" -name '*.asc' -print -quit 2>/dev/null | grep -q .; then
+        echo "Déjà extrait : ${extract_rel}"
+        continue
+      fi
+      echo "Extraction $(basename "${archive}") → ${extract_rel}…"
+      extract_archive_docker "${archive}" "${extract_dir}"
+    done < <(
+      python3 - "${manifest}" "${source_dir}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+base = Path(sys.argv[2])
+for product in manifest.get("products") or []:
+    extract = product.get("extracted")
+    if not extract:
+        continue
+    files = product.get("files") or []
+    if not files:
+        path = product.get("path")
+        files = path if isinstance(path, list) else ([path] if path else [])
+    for name in files:
+        path = base / str(name)
+        if path.suffix.lower() in {".7z", ".zip"} and path.is_file():
+            print(f"{path}\t{extract}")
+PY
+    )
+    docker_args+=(--manifest "/elevation/rge-source/manifest.json")
+  elif [[ "${1:-}" == "--manifest" ]]; then
+    if [[ ! -f "${manifest}" ]]; then
+      echo "Manifeste absent : lancez d'abord ./dev.sh rgealti (sans argument)." >&2
+      exit 1
+    fi
+    docker_args+=(--manifest "/elevation/rge-source/manifest.json")
+  else
+    local staging="${ROOT}/backend/var/elevation/_rge_inputs"
+    mkdir -p "${staging}"
+    for source in "$@"; do
+      cp -a "${source}" "${staging}/"
+      docker_args+=("/elevation/_rge_inputs/$(basename "${source}")")
+    done
+  fi
+
+  echo "Recadrage RGE ALTI via Docker (GDAL)…"
+  docker_rm_rf "${prefix}.bin"
+  docker_rm_rf "${prefix}.json"
+  docker_gdal \
+    -v "${ROOT}/scripts:/scripts:ro" \
+    -v "${ROOT}/backend/var/elevation:/elevation" \
+    -- \
+    python3 /scripts/convert_rge_alti.py "${docker_args[@]}"
+  echo "Relancez ./dev.sh precompute : le relief préférera RGE ALTI à Terrarium."
+}
+
 case "${1:-}" in
   install) install_all ;;
   precompute) shift; precompute "$@" ;;
@@ -447,11 +576,13 @@ case "${1:-}" in
   geologie) shift; geologie "$@" ;;
   tcd) shift; tcd "$@" ;;
   soilph) shift; soilph "$@" ;;
+  lidar) shift; lidar "$@" ;;
+  rgealti) shift; rgealti "$@" ;;
   backend) backend ;;
   frontend) frontend ;;
   docker) docker_up ;;
   *)
-    echo "Usage: ./dev.sh [install|restore-data|precompute|export-data|bdforet|geologie|tcd|soilph|backend|frontend|docker]"
+    echo "Usage: ./dev.sh [install|restore-data|precompute|export-data|bdforet|geologie|tcd|soilph|lidar|rgealti|backend|frontend|docker]"
     echo
     echo "  install       Installe les dépendances PHP et JS"
     echo "  restore-data  Restaure la base précalculée depuis data/"
@@ -461,6 +592,8 @@ case "${1:-}" in
     echo "  geologie      Convertit BRGM Charm-50 pour le substrat"
     echo "  tcd           Télécharge / convertit Copernicus Tree Cover Density (0–100 %)"
     echo "  soilph        Télécharge / convertit EcoDataCube pH du sol (30 m → 50 m)"
+    echo "  lidar         Convertit un CHM LIDAR HD IGN (hauteur de canopée, m)"
+    echo "  rgealti       Télécharge / convertit RGE ALTI (MNT IGN 5 m) pour le relief"
     echo "  backend       Démarre l'API sur http://127.0.0.1:8765"
     echo "  frontend      Démarre l'interface sur http://127.0.0.1:43123"
     echo "  docker        Démarre API + interface via Docker Compose"

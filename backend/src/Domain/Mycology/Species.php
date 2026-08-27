@@ -41,6 +41,8 @@ final readonly class Species
         public array $geologyAffinity = [],
         public ?CanopyDensityBand $canopyDensity = null,
         public ?PhBand $phOptimum = null,
+        public ?CanopyHeightBand $canopyHeight = null,
+        public ?CanopyGapBand $canopyGap = null,
     ) {
     }
 
@@ -73,22 +75,39 @@ final readonly class Species
     }
 
     /**
-     * Continuous tree-cover percent (Copernicus TCD) when known; otherwise BD Forêt FO/FF.
-     * Intermediate cover is closer to published basal-area optima (~15–20 m²/ha).
+     * Prefers LIDAR HD canopy height (+ gap structure when known), then Copernicus TCD, else FO/FF.
+     * Height approximates stand maturity; gap fraction captures clairières / futaie irrégulière.
      */
     public function standDensitySuitability(
         ForestCover $cover,
         CanopyClosure $canopy,
         ?int $canopyCoverPercent = null,
+        ?int $canopyHeightMeters = null,
+        ?int $canopyGapPercent = null,
     ): float {
         if (!$cover->isForest()) {
             return $this->requiresForest ? 0.08 : 0.55;
         }
 
+        if ($canopyHeightMeters !== null) {
+            $band = $this->canopyHeight ?? new CanopyHeightBand(
+                closedFloor: $this->requiresForest ? 0.62 : 0.50,
+                sparseFloor: $this->requiresForest ? 0.22 : 0.60,
+            );
+            $score = $band->suitability((float) $canopyHeightMeters);
+            if ($canopyGapPercent !== null) {
+                $gapBand = $this->canopyGap ?? new CanopyGapBand();
+                // Height dominates; gaps refine (clairière vs futaie fermée continue).
+                $score = 0.72 * $score + 0.28 * $gapBand->suitability((float) $canopyGapPercent);
+            }
+
+            return max(0.0, min(1.0, $score));
+        }
+
         if ($canopyCoverPercent !== null) {
             $band = $this->canopyDensity ?? new CanopyDensityBand(
-                closedFloor: $this->requiresForest ? 0.76 : 0.55,
-                sparseFloor: $this->requiresForest ? 0.22 : 0.60,
+                closedFloor: $this->requiresForest ? 0.62 : 0.50,
+                sparseFloor: $this->requiresForest ? 0.20 : 0.60,
             );
 
             return max(0.0, min(1.0, $band->suitability($canopyCoverPercent)));
@@ -100,20 +119,26 @@ final readonly class Species
 
         return match ($canopy) {
             CanopyClosure::Unknown => 0.55,
-            CanopyClosure::Open => $this->requiresForest ? 0.92 : 0.95,
-            CanopyClosure::Closed => $this->requiresForest ? 0.78 : 0.70,
+            CanopyClosure::Open => $this->requiresForest ? 0.84 : 0.90,
+            CanopyClosure::Closed => $this->requiresForest ? 0.62 : 0.60,
         };
     }
 
     /**
-     * Prefers continuous EcoDataCube pH when known; otherwise Charm-50 substrate classes.
+     * Prefers continuous EcoDataCube pH when known; Charm-50 softens alpine mismatches.
      */
     public function geologySuitability(Substrate $substrate, ?float $soilPh = null): float
     {
         if ($soilPh !== null) {
             $band = $this->phOptimum ?? new PhBand();
+            $fromPh = $band->suitability($soilPh);
+            if ($substrate !== Substrate::Unknown && isset($this->geologyAffinity[$substrate->value])) {
+                $fromGeo = $this->geologyAffinity[$substrate->value];
+                // Local geology (Charm-50) pulls when the pan-European pH model disagrees.
+                return max(0.0, min(1.0, 0.72 * $fromPh + 0.28 * $fromGeo));
+            }
 
-            return max(0.0, min(1.0, $band->suitability($soilPh)));
+            return max(0.0, min(1.0, $fromPh));
         }
 
         if (isset($this->geologyAffinity[$substrate->value])) {

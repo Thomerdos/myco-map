@@ -29,6 +29,10 @@ final readonly class TerrainProfile
         public ?int $canopyCoverPercent = null,
         /** Soil pH in water (EcoDataCube); null when the raster is missing. */
         public ?float $soilPh = null,
+        /** Canopy height in metres (LIDAR HD CHM); null when the raster is missing. */
+        public ?int $canopyHeightMeters = null,
+        /** Gap fraction 0–100 % from fine LIDAR MNH; null when missing. */
+        public ?int $canopyGapPercent = null,
     ) {
     }
 

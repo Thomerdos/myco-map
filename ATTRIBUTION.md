@@ -48,9 +48,15 @@ Attribution recommandée par le fournisseur :
 
 > Terrain Tiles — données issues de sources multiples, voir <https://github.com/tilezen/joerd/blob/master/docs/attribution.md>
 
-Les valeurs d'altitude, de pente, d'exposition et de courbure de la base dérivent de ce jeu de données.
+Les valeurs d'altitude, de pente, d'exposition et de courbure de la base dérivent de ce jeu de données
+par défaut. Quand RGE ALTI a été ingéré (`./dev.sh rgealti`), le MNT IGN le remplace.
 
-## Open-Meteo — météo
+## IGN RGE ALTI® — relief (optionnel)
+
+[RGE ALTI®](https://geoservices.ign.fr/rgealti) de l'IGN, diffusé sous
+[Licence Ouverte 2.0](https://www.etalab.gouv.fr/licence-ouverte-open-licence/), via l'API de
+téléchargement Géoplateforme (`data.geopf.fr`). Pas redistribué dans ce dépôt : seules les
+valeurs dérivées (altitude / pente / …) peuvent apparaître dans une base précalculée locale.
 
 API [Open-Meteo](https://open-meteo.com/), sous [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Les données météo ne sont pas stockées dans le dépôt : elles sont interrogées à la demande et mises en cache deux heures.
 

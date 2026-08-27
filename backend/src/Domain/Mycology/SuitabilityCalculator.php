@@ -25,9 +25,11 @@ final readonly class SuitabilityCalculator
         ScoringMode $mode = ScoringMode::Moment,
     ): float {
         $total = 0.0;
+        $phenology = null;
 
         if ($mode->includesMoment()) {
-            $total += $this->weatherValue($species, $weather) * $mode->weight(Criterion::Weather);
+            $phenology = FlushClock::phenology($species, $weather);
+            $total += $this->weatherValue($species, $weather, $phenology) * $mode->weight(Criterion::Weather);
         }
 
         $total += $this->altitudeValue($species, $terrain) * $mode->weight(Criterion::Altitude);
@@ -39,7 +41,7 @@ final readonly class SuitabilityCalculator
         $total += $this->edgeValue($species, $terrain) * $mode->weight(Criterion::Edge);
         $total += $this->slopeValue($species, $terrain) * $mode->weight(Criterion::Slope);
 
-        return $this->applyCaps($total, $species, $terrain, $season, $weather, $mode);
+        return $this->applyCaps($total, $species, $terrain, $season, $weather, $mode, $phenology);
     }
 
     public function score(
@@ -146,6 +148,7 @@ final readonly class SuitabilityCalculator
         SeasonAssessment $season,
         WeatherConditions $weather,
         ScoringMode $mode,
+        ?float $phenology = null,
     ): float {
         if ($species->requiresForest && !$terrain->cover->isForest()) {
             $total = min($total, 18.0);
@@ -157,7 +160,7 @@ final readonly class SuitabilityCalculator
             }
 
             // Habitat alone must not read as "go now" while fruitbodies are still incubating.
-        $phenology = FlushClock::phenology($species, $weather);
+            $phenology ??= FlushClock::phenology($species, $weather);
             if ($phenology < 25.0) {
                 $total = min($total, 48.0);
             } elseif ($phenology < 45.0) {
@@ -184,9 +187,9 @@ final readonly class SuitabilityCalculator
      * fruitbodies lag behind it. Temperature, air humidity and measured soil moisture
      * only modulate once the clock since that rain is in the species' fruiting window.
      */
-    private function weatherValue(Species $species, WeatherConditions $weather): float
+    private function weatherValue(Species $species, WeatherConditions $weather, ?float $phenology = null): float
     {
-        $phenology = FlushClock::phenology($species, $weather);
+        $phenology ??= FlushClock::phenology($species, $weather);
         $supply = $this->waterSupply($weather);
 
         $recent = match (true) {
@@ -324,6 +327,8 @@ final readonly class SuitabilityCalculator
             $terrain->cover,
             $terrain->canopy,
             $terrain->canopyCoverPercent,
+            $terrain->canopyHeightMeters,
+            $terrain->canopyGapPercent,
         ) * 100;
     }
 
@@ -431,6 +436,35 @@ final readonly class SuitabilityCalculator
                 : 'Hors forêt — acceptable pour cette espèce';
         }
 
+        if ($terrain->canopyHeightMeters !== null) {
+            $value = $species->standDensitySuitability(
+                $terrain->cover,
+                $terrain->canopy,
+                null,
+                $terrain->canopyHeightMeters,
+                $terrain->canopyGapPercent,
+            );
+            $band = $species->canopyHeight ?? new CanopyHeightBand();
+            $meters = $terrain->canopyHeightMeters;
+            $note = match (true) {
+                $meters >= $band->optimumLow && $meters <= $band->optimumHigh => ', dans l\'optimum de hauteur',
+                $meters > $band->optimumHigh => ', peuplement plus haut que l\'optimum',
+                default => ', peuplement plus bas que l\'optimum',
+            };
+            $gapNote = '';
+            if ($terrain->canopyGapPercent !== null) {
+                $gapNote = sprintf(', %d %% de clairières (LIDAR)', $terrain->canopyGapPercent);
+            }
+
+            return sprintf(
+                '%d m de hauteur de canopée (LIDAR HD)%s%s — score densité %.0f / 100',
+                $meters,
+                $note,
+                $gapNote,
+                $value * 100,
+            );
+        }
+
         if ($terrain->canopyCoverPercent !== null) {
             $value = $species->standDensitySuitability(
                 $terrain->cover,
@@ -456,7 +490,7 @@ final readonly class SuitabilityCalculator
         $reading = match ($terrain->canopy) {
             \App\Domain\Terrain\CanopyClosure::Open => 'couvert ouvert (FO, 10–40 %) : plus proche de l\'optimum de surface terrière',
             \App\Domain\Terrain\CanopyClosure::Closed => 'couvert fermé (FF, > 40 %) : peuplement plus dense que l\'optimum courant',
-            default => 'densité de peuplement inconnue (TCD et proxy FO/FF indisponibles)',
+            default => 'densité de peuplement inconnue (LIDAR, TCD et proxy FO/FF indisponibles)',
         };
 
         return sprintf('%s — %s', $terrain->canopy->shortLabel(), $reading);

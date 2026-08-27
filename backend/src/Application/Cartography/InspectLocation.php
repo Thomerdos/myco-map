@@ -12,6 +12,7 @@ use App\Domain\Mycology\ScoringMode;
 use App\Domain\Mycology\Species;
 use App\Domain\Mycology\SpeciesCatalog;
 use App\Domain\Mycology\SuitabilityCalculator;
+use App\Domain\Mycology\SuitabilityLevel;
 use App\Domain\Terrain\AccessWalk;
 use App\Domain\Terrain\TerrainCellStore;
 use App\Domain\Terrain\TerrainProfile;
@@ -49,13 +50,14 @@ final readonly class InspectLocation
         $reports = [];
         foreach ($this->speciesCatalog->all() as $species) {
             $season = new SeasonAssessment($species, $date);
-            $score = $this->calculator->score($species, $profile, $weather, $season, $mode);
+            $value = $this->calculator->evaluate($species, $profile, $weather, $season, $mode);
+            $level = SuitabilityLevel::fromScore($value);
             $reports[$species->id] = [
                 'id' => $species->id,
                 'name' => $species->commonName,
-                'score' => round($score->value, 1),
-                'level' => $score->level->value,
-                'levelLabel' => $score->level->label(),
+                'score' => round($value, 1),
+                'level' => $level->value,
+                'levelLabel' => $level->label(),
                 'inSeason' => $season->isInSeason(),
             ];
         }
@@ -83,6 +85,8 @@ final readonly class InspectLocation
                 'canopy' => $profile->canopy->label(),
                 'canopyCode' => $profile->canopy->value,
                 'canopyCover' => $profile->canopyCoverPercent,
+                'canopyHeight' => $profile->canopyHeightMeters,
+                'canopyGap' => $profile->canopyGapPercent,
                 'edgeDistance' => $profile->edgeDistanceMeters,
                 'waterDistance' => $profile->waterDistanceMeters,
                 'accessDistance' => $profile->accessDistanceMeters,
@@ -141,7 +145,7 @@ final readonly class InspectLocation
         for ($offset = 0; $offset <= ProjectScoreHorizon::HORIZON_DAYS; $offset++) {
             $date = $from->modify(sprintf('+%d days', $offset));
             $season = new SeasonAssessment($species, $date);
-            $weather = $this->weatherSource->fieldFor($this->area->bounds, $date)->at($profile->coordinates);
+            $weather = $this->weatherSource->fieldFor($this->area->bounds, $date)->nearest($profile->coordinates);
             $value = $this->calculator->evaluate($species, $profile, $weather, $season, ScoringMode::Moment);
 
             $days[] = [
@@ -152,7 +156,10 @@ final readonly class InspectLocation
                     : sprintf('J+%d', $offset),
                 'score' => round($value, 1),
                 'inSeason' => $season->isInSeason(),
-                'weather' => FlushClock::decorate($weather, $species, $date),
+                'weather' => [
+                    'label' => FlushClock::label($species, $weather, $date),
+                    'flushPhase' => FlushClock::leadingSpell($species, $weather)['phase'] ?? 'none',
+                ],
             ];
         }
 

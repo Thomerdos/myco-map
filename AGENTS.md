@@ -82,6 +82,33 @@ géologie (+4) et lisière (+3) — les leviers qui classent les mailles, pas la
 - Morille `mode=moment` : **toutes** les mailles à 38, libellé « À éviter ». Garde-fou OK.
 - Légende / `SuitabilityLevel` **non recalés** : le 90 est plus rare, pas déplacé.
 
+**Excellence squeeze densité + affinités (août 2026).** Objectif : que ≥ 90 reste
+l'intersection rare (densité TCD optimale × hôte × couvert × substrat/pH), pas le plateau
+« bonne forêt ». Changements dans `InMemorySpeciesCatalog` + repli FO/FF de `Species` :
+
+- Optima TCD resserrés (ex. cèpe 50–70 → **55–65**), `closedFloor` baissé (~0,76 → **0,66**).
+- Plafonds couvert / hôte / géologie comprimés (plus de 1,0 ; meilleurs hôtes ~0,90–0,94).
+- Repli sans TCD : FO ouvert 0,92 → 0,85 ; FF fermé 0,78 → 0,66.
+
+À re-challenger sur Chartreuse (`mode=habitat`, cèpe) : viser clairement moins de mailles ≥ 90
+et un `best` qui ne colle plus au plafond. Légende / seuils 90 **non recalés** tant que la
+nouvelle distribution n'est pas mesurée.
+
+**Re-challenge squeeze sans compression (27 août 2026).** Même emprise Chartreuse,
+`mode=habitat`, cèpe, `accessible=0`, DB `data-local` (TCD + pH) : `average=62,9`,
+`best=96,3`, **193** mailles ≥ 90 (~1,1 %). La compression artificielle a été retirée ;
+prochaines gains attendus via LIDAR HD / MNT IGN / météo plus fine.
+
+**Pas de compression artificielle du score.** Un `compressUpperBand` a été essayé puis retiré
+(août 2026) : trop opaque et trop dur à caler. La discrimination reste sur les profils
+(densité × hôte × pH) et les prochaines sources (LIDAR HD, MNT IGN).
+
+**Base SQLite runtime.** En local, `backend/.env.local` pointe vers
+`var/data-local/myco.sqlite` (précalcul récent avec `canopy_cover` + `soil_ph`).
+`var/data/myco.sqlite` peut être une archive plus ancienne **sans** ces colonnes — ne pas
+s'y fier pour juger le modèle. Après `./dev.sh tcd` / `soilph`, relancer `precompute` vers
+la DB réellement lue par le backend.
+
 **Note sur le poids météo.** Dans les modèles publiés, la météo explique l'essentiel de la
 variabilité **interannuelle**. Ici la carte est spatiale et à date fixe : la météo est quasi
 uniforme sur une emprise, donc un poids élevé déplace toute la carte sans discriminer les
@@ -137,15 +164,46 @@ Ne pas les confondre avec le **J+n de la barre du haut** (jours à partir d'aujo
 
 ### Restantes
 
-1. **Surface terrière encore proxy.** Le critère « Densité du peuplement » lit Copernicus
-   TCD (0–100 %) quand le raster est là, sinon FO/FF. Ce n'est pas des m²/ha mesurés.
-   Piste suivante : LIDAR HD IGN (hauteur de canopée). Le NDVI Sentinel-2 sature dans les
-   hêtraies/pessières fermées — ne pas en faire la source nominale.
-2. **pH modélisé, pas mesuré densément.** EcoDataCube (AI4SoilHealth) fournit un pH H₂O
-   30 m (R² ≈ 0,6) ; Charm-50 reste le repli catégoriel. Ce n'est toujours pas un réseau
-   de mesures densément réparties en forêt alpine.
+1. **Surface terrière encore proxy.** Densité = hauteur LIDAR + fraction de clairières
+   (MNH), sinon TCD, sinon FO/FF. Ce n'est pas des m²/ha IFN.
+2. **pH : EcoDataCube + ancrage Charm-50.** Le pH pan-européen (R² ≈ 0,6) est adouci par
+   la géologie locale (72/28) quand les deux sources sont présentes.
 3. **Délais de pousse par espèce non sourcés en revue à comité de lecture.** Voir la note en fin
    de fichier.
+
+## Hauteur de canopée (LIDAR HD IGN)
+
+Source optionnelle du critère densité (16 %) : MNH = MNS − MNT LIDAR HD
+([geoservices.ign.fr/lidarhd](https://geoservices.ign.fr/lidarhd)). Index WFS
+`IGNF_MNH-LIDAR-HD:dalle` → `scripts/fetch_lidar_mnh_links.py` (presets Chartreuse /
+Vercors / Belledonne) → `scripts/download_lidar_links.py` (`--pixel-size 200` ≈ 5 m) →
+`convert_lidar_chm.py` écrit `canopy-height` **et** `canopy-gap` (clairières % < 3 m).
+Colonnes SQLite `canopy_height` / `canopy_gap`. Densité = hauteur × structure de trous
+(`CanopyHeightBand` + `CanopyGapBand`). Absent → TCD / FO-FF.
+
+## MNT IGN (RGE ALTI)
+
+Relief préféré au précalcul quand `backend/var/elevation/rge-alti.{bin,json}` existe.
+Sinon Terrarium AWS (~13 m/px). Améliore pente / exposition / courbure (humidité
+topographique).
+
+```bash
+./dev.sh rgealti
+```
+
+Télécharge les packages **5 m ASC** des départements `D026` / `D038` / `D073` via l'API
+Géoplateforme (`https://data.geopf.fr/telechargement/resource/RGEALTI`, documentée sur
+[data.gouv.fr](https://www.data.gouv.fr/dataservices/api-geoplateforme-telechargement)),
+extrait les dalles, filtre l'emprise, écrit la mosaïque 50 m. Variables :
+`RGE_ALTI_ZONES`, `RGE_ALTI_RESOLUTION` (`5M` | `1M`). Bornes à garder alignées avec
+`services.yaml` dans `scripts/fetch_rge_alti.py` et `scripts/convert_rge_alti.py`.
+`--manifest` = reconversion seule ; des `.tif` / `.asc` en arguments restent possibles.
+
+## Météo (Open-Meteo + Météo-France seamless / AROME)
+
+Lattice **13×13** (169 points, lots de 40) avec `models=meteofrance_seamless` (AROME
+~1,5–2,5 km sur la France + ARPEGE). Cache `weather_raw_v4_*`. Moins fin qu'un radar
+local, nettement mieux que l'ancien 7×7 générique.
 
 ## pH du sol (EcoDataCube / AI4SoilHealth)
 

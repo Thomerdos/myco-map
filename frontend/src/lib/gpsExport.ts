@@ -56,8 +56,9 @@ function sectorScoreLabel(sector: Sector): string {
 }
 
 function iconScale(score: number): string {
-  if (score >= 96) return '1.35'
-  if (score >= 92) return '1.15'
+  if (score >= 96) return '1.40'
+  if (score >= 93) return '1.25'
+  if (score >= 90) return '1.15'
   return '0.95'
 }
 

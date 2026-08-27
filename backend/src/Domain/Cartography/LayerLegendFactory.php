@@ -12,10 +12,8 @@ final readonly class LayerLegendFactory
     public function create(MapLayer $layer, ScoringMode $mode = ScoringMode::Moment): LayerLegend
     {
         return match ($layer) {
-            // Two families so the eye can group at a glance: gold wash for the common
-            // 70–85 forest plateau, then a hard jump to magenta (≥ 90) that does not
-            // exist on the basemap. Green is avoided. The empty stop holds gold so
-            // RGB interpolation never turns 80–89 into muddy mauve.
+            // Deux familles : jaune→rouge 70–90, puis violet/fuchsia franc ≥ 90
+            // (seuil excellence). Sous 70 reste fantôme.
             MapLayer::Potential => $this->potentialLegend(
                 $mode === ScoringMode::Habitat ? 'Potentiel d\'habitat' : $layer->label(),
             ),
@@ -95,13 +93,16 @@ final readonly class LayerLegendFactory
     private function potentialLegend(string $title): LayerLegend
     {
         return new LayerLegend($title, null, false, [
-            ['value' => 0, 'label' => 'À éviter', 'color' => '#14161e'],
-            ['value' => 40, 'label' => 'Faible', 'color' => '#2a3142'],
-            ['value' => 62, 'label' => 'Moyen', 'color' => '#4a5568'],
-            ['value' => 78, 'label' => 'Correct', 'color' => '#ffc01a'],
-            ['value' => 86, 'label' => '', 'color' => '#ffd24d'],
-            ['value' => 90, 'label' => 'Prometteur', 'color' => '#c026d3'],
-            ['value' => 96, 'label' => 'Exceptionnel', 'color' => '#ff4ef0'],
+            ['value' => 0, 'label' => 'À éviter', 'color' => '#0c0e14'],
+            ['value' => 60, 'label' => '', 'color' => '#1e2430'],
+            ['value' => 70, 'label' => '70', 'color' => '#eab308'],
+            ['value' => 75, 'label' => '', 'color' => '#f59e0b'],
+            ['value' => 80, 'label' => '80', 'color' => '#f97316'],
+            ['value' => 85, 'label' => 'Correct', 'color' => '#ea580c'],
+            ['value' => 90, 'label' => '90', 'color' => '#dc2626'],
+            ['value' => 93, 'label' => 'Prometteur', 'color' => '#c026d3'],
+            ['value' => 96, 'label' => '96', 'color' => '#e879f9'],
+            ['value' => 100, 'label' => 'Top', 'color' => '#fce7f3'],
         ], true);
     }
 }
