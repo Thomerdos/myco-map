@@ -31,6 +31,7 @@ interface TerrainCellStore
      *     geology: int,
      *     access_distance: int,
      *     canopy_cover: ?int,
+     *     canopy_height: ?int,
      *     soil_ph: ?float,
      *     park: int,
      *     path: int

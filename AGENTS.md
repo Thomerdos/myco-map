@@ -164,15 +164,33 @@ Ne pas les confondre avec le **J+n de la barre du haut** (jours à partir d'aujo
 
 ### Restantes
 
-1. **Surface terrière encore proxy.** Le critère « Densité du peuplement » lit Copernicus
-   TCD (0–100 %) quand le raster est là, sinon FO/FF. Ce n'est pas des m²/ha mesurés.
-   Piste suivante : LIDAR HD IGN (hauteur de canopée). Le NDVI Sentinel-2 sature dans les
-   hêtraies/pessières fermées — ne pas en faire la source nominale.
+1. **Surface terrière encore proxy.** Le critère « Densité du peuplement » lit d'abord la
+   **hauteur de canopée LIDAR HD** (`canopy_height`, `./dev.sh lidar`) si le CHM est là,
+   sinon Copernicus TCD (0–100 %), sinon FO/FF. Ce n'est pas des m²/ha mesurés ; le CHM
+   s'en rapproche. Ne pas utiliser le NDVI Sentinel-2 (sature en hêtraie/pessière fermée).
 2. **pH modélisé, pas mesuré densément.** EcoDataCube (AI4SoilHealth) fournit un pH H₂O
    30 m (R² ≈ 0,6) ; Charm-50 reste le repli catégoriel. Ce n'est toujours pas un réseau
    de mesures densément réparties en forêt alpine.
 3. **Délais de pousse par espèce non sourcés en revue à comité de lecture.** Voir la note en fin
    de fichier.
+
+## Hauteur de canopée (LIDAR HD IGN)
+
+Source optionnelle du critère densité (16 %) : CHM = MNS − MNT LIDAR HD
+([geoservices.ign.fr/lidarhd](https://geoservices.ign.fr/lidarhd)). `./dev.sh lidar <chm.tif…>`
+écrit `backend/var/lidar/canopy-height.{bin,json}` (uint8 mètres). Colonne SQLite
+`canopy_height`. Bandes par espèce : `CanopyHeightBand`. Absent → TCD / FO-FF.
+
+## MNT IGN (RGE ALTI)
+
+Relief préféré au précalcul quand `backend/var/elevation/rge-alti.{bin,json}` existe
+(`./dev.sh rgealti <dalle.tif…>`). Sinon Terrarium AWS (~13 m/px). Améliore pente /
+exposition / courbure (humidité topographique).
+
+## Météo (Open-Meteo, grille 7×7)
+
+Lattice **7×7** sur l'emprise de requête (49 points, IDW) pour laisser apparaître les
+ombres pluviométriques. Toujours moins fin qu'AROME, mais nettement mieux que l'ancien 3×3.
 
 ## pH du sol (EcoDataCube / AI4SoilHealth)
 

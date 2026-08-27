@@ -324,6 +324,7 @@ final readonly class SuitabilityCalculator
             $terrain->cover,
             $terrain->canopy,
             $terrain->canopyCoverPercent,
+            $terrain->canopyHeightMeters,
         ) * 100;
     }
 
@@ -431,6 +432,29 @@ final readonly class SuitabilityCalculator
                 : 'Hors forêt — acceptable pour cette espèce';
         }
 
+        if ($terrain->canopyHeightMeters !== null) {
+            $value = $species->standDensitySuitability(
+                $terrain->cover,
+                $terrain->canopy,
+                null,
+                $terrain->canopyHeightMeters,
+            );
+            $band = $species->canopyHeight ?? new CanopyHeightBand();
+            $meters = $terrain->canopyHeightMeters;
+            $note = match (true) {
+                $meters >= $band->optimumLow && $meters <= $band->optimumHigh => ', dans l\'optimum de hauteur',
+                $meters > $band->optimumHigh => ', peuplement plus haut que l\'optimum',
+                default => ', peuplement plus bas que l\'optimum',
+            };
+
+            return sprintf(
+                '%d m de hauteur de canopée (LIDAR HD)%s — score densité %.0f / 100',
+                $meters,
+                $note,
+                $value * 100,
+            );
+        }
+
         if ($terrain->canopyCoverPercent !== null) {
             $value = $species->standDensitySuitability(
                 $terrain->cover,
@@ -456,7 +480,7 @@ final readonly class SuitabilityCalculator
         $reading = match ($terrain->canopy) {
             \App\Domain\Terrain\CanopyClosure::Open => 'couvert ouvert (FO, 10–40 %) : plus proche de l\'optimum de surface terrière',
             \App\Domain\Terrain\CanopyClosure::Closed => 'couvert fermé (FF, > 40 %) : peuplement plus dense que l\'optimum courant',
-            default => 'densité de peuplement inconnue (TCD et proxy FO/FF indisponibles)',
+            default => 'densité de peuplement inconnue (LIDAR, TCD et proxy FO/FF indisponibles)',
         };
 
         return sprintf('%s — %s', $terrain->canopy->shortLabel(), $reading);

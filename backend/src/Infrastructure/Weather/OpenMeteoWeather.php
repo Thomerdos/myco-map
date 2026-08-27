@@ -15,12 +15,13 @@ use Symfony\Contracts\Cache\ItemInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
- * Open-Meteo sampled on a small lattice across the area. One download covers past history
- * plus two weeks of forecast so scores can be projected forward day by day.
+ * Open-Meteo sampled on a 7×7 lattice across the area (was 3×3) so Chartreuse /
+ * Belledonne rain shadows stay visible. One download covers past history plus two
+ * weeks of forecast so scores can be projected forward day by day.
  */
 final readonly class OpenMeteoWeather implements WeatherSource
 {
-    private const SAMPLES_PER_AXIS = 3;
+    private const SAMPLES_PER_AXIS = 7;
     private const TRIGGER_WINDOW_START = -14;
     private const TRIGGER_WINDOW_END = -5;
     private const RECENT_WINDOW_START = -4;
@@ -47,7 +48,7 @@ final readonly class OpenMeteoWeather implements WeatherSource
             ->setTime(12, 0);
 
         $cacheKey = sprintf(
-            'weather_raw_v2_%s_%s',
+            'weather_raw_v3_%s_%s',
             md5(serialize($bounds->toArray())),
             (new \DateTimeImmutable('now', $timezone))->format('Y-m-d-H'),
         );

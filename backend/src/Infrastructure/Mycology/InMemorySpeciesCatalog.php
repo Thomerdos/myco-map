@@ -6,6 +6,7 @@ namespace App\Infrastructure\Mycology;
 
 use App\Domain\Mycology\AltitudeBand;
 use App\Domain\Mycology\CanopyDensityBand;
+use App\Domain\Mycology\CanopyHeightBand;
 use App\Domain\Mycology\EdgeAffinity;
 use App\Domain\Mycology\HarvestWindow;
 use App\Domain\Mycology\PhBand;
@@ -105,6 +106,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 ],
                 canopyDensity: new CanopyDensityBand(55, 64, 0.62, 0.20),
                 phOptimum: new PhBand(5.2, 6.8, 0.32),
+                canopyHeight: new CanopyHeightBand(14, 24, 0.62, 0.22),
             ),
             new Species(
                 id: 'trompette',
@@ -152,6 +154,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 ],
                 canopyDensity: new CanopyDensityBand(58, 70, 0.66, 0.16),
                 phOptimum: new PhBand(6.8, 7.8, 0.18),
+                canopyHeight: new CanopyHeightBand(16, 28, 0.66, 0.18),
             ),
             new Species(
                 id: 'chanterelle',
@@ -200,6 +203,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 ],
                 canopyDensity: new CanopyDensityBand(55, 64, 0.62, 0.20),
                 phOptimum: new PhBand(5.0, 6.5, 0.25),
+                canopyHeight: new CanopyHeightBand(12, 26, 0.62, 0.20),
             ),
             new Species(
                 id: 'girolle',
@@ -247,6 +251,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 ],
                 canopyDensity: new CanopyDensityBand(48, 58, 0.60, 0.22),
                 phOptimum: new PhBand(4.8, 6.2, 0.18),
+                canopyHeight: new CanopyHeightBand(10, 22, 0.60, 0.24),
             ),
             new Species(
                 id: 'pied_mouton',
@@ -294,6 +299,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 ],
                 canopyDensity: new CanopyDensityBand(55, 65, 0.62, 0.20),
                 phOptimum: new PhBand(5.0, 6.5, 0.25),
+                canopyHeight: new CanopyHeightBand(14, 28, 0.62, 0.20),
             ),
             new Species(
                 id: 'morille',
@@ -347,6 +353,7 @@ final class InMemorySpeciesCatalog implements SpeciesCatalog
                 ],
                 canopyDensity: new CanopyDensityBand(20, 38, 0.42, 0.68),
                 phOptimum: new PhBand(6.8, 7.8, 0.18),
+                canopyHeight: new CanopyHeightBand(4, 14, 0.45, 0.70, sparseUntil: 2.0, tallAt: 28.0),
             ),
         ];
     }
