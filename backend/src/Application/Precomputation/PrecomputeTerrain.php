@@ -14,10 +14,10 @@ use App\Domain\Terrain\ForestCover;
 use App\Domain\Terrain\GeologySource;
 use App\Domain\Terrain\HostTree;
 use App\Domain\Terrain\LandCoverSource;
+use App\Domain\Terrain\SoilPhSource;
 use App\Domain\Terrain\StandCode;
 use App\Domain\Terrain\Substrate;
 use App\Domain\Terrain\TerrainCellStore;
-use App\Domain\Terrain\TerrainProfile;
 use App\Infrastructure\Raster\ChamferDistance;
 use App\Infrastructure\Raster\PathNetworkAccess;
 use App\Infrastructure\Raster\PolygonRasterizer;
@@ -25,17 +25,21 @@ use App\Infrastructure\Raster\TerrainDerivatives;
 
 /**
  * Builds the static half of the model once: elevation derivatives, forest cover,
- * geology, access and tree-cover density for every cell. Weather stays dynamic
- * at query time.
+ * geology, soil pH, access and tree-cover density for every cell. Weather stays
+ * dynamic at query time.
  */
 final readonly class PrecomputeTerrain
 {
+    /** Progress ticks: avoid flooding Docker stdout (was every 40 rows ≈ 40 lines/s). */
+    private const PROGRESS_EVERY_ROWS = 200;
+
     public function __construct(
         private SurveyArea $area,
         private ElevationSampler $elevationSampler,
         private LandCoverSource $landCover,
         private GeologySource $geology,
         private CanopyCoverSource $canopyCoverSource,
+        private SoilPhSource $soilPhSource,
         private TerrainCellStore $cellStore,
         private PolygonRasterizer $rasterizer,
         private ChamferDistance $distance,
@@ -68,6 +72,7 @@ final readonly class PrecomputeTerrain
         [$water, $waterCount] = $this->rasterizeWater($grid, $progress);
         [$park, $path, $accessWays] = $this->rasterizeAccess($grid, $progress);
         [$canopyCover, $canopyCoverCells] = $this->sampleCanopyCover($grid, $progress);
+        [$soilPhTenths, $soilPhCells] = $this->sampleSoilPh($grid, $progress);
 
         $progress->stageStarted('Distances aux lisières et à l\'eau');
         $insideForest = $this->distance->compute(
@@ -85,6 +90,8 @@ final readonly class PrecomputeTerrain
             $grid,
             static fn (int $value): bool => $value === 1,
         );
+        // Binary water mask is no longer needed after the distance transform.
+        unset($water);
         $progress->stageFinished('Distances aux lisières et à l\'eau');
 
         $progress->stageStarted('Accès parking + chemins');
@@ -96,7 +103,22 @@ final readonly class PrecomputeTerrain
         $progress->stageStarted('Écriture de la base précalculée');
         $written = $this->cellStore->replaceAll(
             $grid,
-            $this->buildCells($grid, $elevation, $derived, $cover, $geology, $insideForest, $towardsForest, $towardsWater, $access, $canopyCover, $park, $path, $progress),
+            $this->buildCells(
+                $grid,
+                $elevation,
+                $derived,
+                $cover,
+                $geology,
+                $insideForest,
+                $towardsForest,
+                $towardsWater,
+                $access,
+                $canopyCover,
+                $soilPhTenths,
+                $park,
+                $path,
+                $progress,
+            ),
         );
         $progress->stageFinished('Écriture de la base précalculée');
 
@@ -111,6 +133,7 @@ final readonly class PrecomputeTerrain
             waterFeatures: $waterCount,
             accessWays: $accessWays,
             canopyCoverCells: $canopyCoverCells,
+            soilPhCells: $soilPhCells,
             unavailableChunks: $this->landCover->unavailableChunks(),
             durationSeconds: microtime(true) - $startedAt,
         );
@@ -123,19 +146,29 @@ final readonly class PrecomputeTerrain
         $progress->stageStarted($stage);
 
         $total = $grid->cellCount();
+        $columns = $grid->columns;
+        $rows = $grid->rows;
+        $south = $grid->bounds->south;
+        $west = $grid->bounds->west;
+        $latStep = $grid->latitudeStep;
+        $lngStep = $grid->longitudeStep;
+
         /** @var \SplFixedArray<float> $elevation */
         $elevation = new \SplFixedArray($total);
 
-        for ($row = 0; $row < $grid->rows; $row++) {
-            $rowOffset = $row * $grid->columns;
+        for ($row = 0; $row < $rows; $row++) {
+            $rowOffset = $row * $columns;
+            $latitude = $south + ($row + 0.5) * $latStep;
 
-            for ($column = 0; $column < $grid->columns; $column++) {
-                $elevation[$rowOffset + $column] = $this->elevationSampler->elevationAt(
-                    $grid->coordinatesAt($column, $row)
+            for ($column = 0; $column < $columns; $column++) {
+                $longitude = $west + ($column + 0.5) * $lngStep;
+                $elevation[$rowOffset + $column] = $this->elevationSampler->elevationAtLatLng(
+                    $latitude,
+                    $longitude,
                 ) ?? 0.0;
             }
 
-            if ($row % 40 === 0) {
+            if ($row % self::PROGRESS_EVERY_ROWS === 0) {
                 $progress->stageAdvanced($stage, $rowOffset, $total);
             }
         }
@@ -169,9 +202,12 @@ final readonly class PrecomputeTerrain
                     $this->rasterizer->fillRing($cover, $grid, $ring, $openGround);
                 }
             }
-            $progress->stageAdvanced($stage, $polygonCount, 0);
+            if ($polygonCount % 2000 === 0) {
+                $progress->stageAdvanced($stage, $polygonCount, 0);
+            }
         }
 
+        $progress->stageAdvanced($stage, $polygonCount, 0);
         $progress->stageFinished($stage);
 
         return [$cover, $polygonCount];
@@ -201,9 +237,12 @@ final readonly class PrecomputeTerrain
                     $this->rasterizer->fillRing($geology, $grid, $ring, $unknown);
                 }
             }
-            $progress->stageAdvanced($stage, $polygonCount, 0);
+            if ($polygonCount % 2000 === 0) {
+                $progress->stageAdvanced($stage, $polygonCount, 0);
+            }
         }
 
+        $progress->stageAdvanced($stage, $polygonCount, 0);
         $progress->stageFinished($stage);
 
         return [$geology, $polygonCount];
@@ -231,9 +270,12 @@ final readonly class PrecomputeTerrain
                 }
                 $this->rasterizer->stampPolyline($water, $grid, $feature->points, 1);
             }
-            $progress->stageAdvanced($stage, $featureCount, 0);
+            if ($featureCount % 2000 === 0) {
+                $progress->stageAdvanced($stage, $featureCount, 0);
+            }
         }
 
+        $progress->stageAdvanced($stage, $featureCount, 0);
         $progress->stageFinished($stage);
 
         return [$water, $featureCount];
@@ -266,9 +308,12 @@ final readonly class PrecomputeTerrain
                     $this->stampAccess($path, $grid, $way);
                 }
             }
-            $progress->stageAdvanced($stage, $wayCount, 0);
+            if ($wayCount % 10000 === 0) {
+                $progress->stageAdvanced($stage, $wayCount, 0);
+            }
         }
 
+        $progress->stageAdvanced($stage, $wayCount, 0);
         $progress->stageFinished($stage);
 
         return [$park, $path, $wayCount];
@@ -293,6 +338,25 @@ final readonly class PrecomputeTerrain
         return [$canopyCover, $known];
     }
 
+    /** @return array{0: \SplFixedArray<int>, 1: int} */
+    private function sampleSoilPh(Grid $grid, PrecomputationProgress $progress): array
+    {
+        $stage = 'pH du sol (EcoDataCube)';
+        $progress->stageStarted($stage);
+
+        $soilPh = $this->soilPhSource->sample($grid);
+        $known = 0;
+        for ($i = 0, $total = $grid->cellCount(); $i < $total; $i++) {
+            if ($soilPh[$i] >= 0) {
+                $known++;
+            }
+        }
+
+        $progress->stageFinished($stage);
+
+        return [$soilPh, $known];
+    }
+
     private function stampAccess(\SplFixedArray $raster, Grid $grid, AccessWay $way): void
     {
         if ($way->isArea && \count($way->points) >= 3) {
@@ -311,6 +375,8 @@ final readonly class PrecomputeTerrain
     }
 
     /**
+     * Yields scalar rows for SQLite — never allocates TerrainProfile / Coordinates.
+     *
      * @param \SplFixedArray<float> $elevation
      * @param array{slope: \SplFixedArray<float>, aspect: \SplFixedArray<float>, curvature: \SplFixedArray<float>} $derived
      * @param \SplFixedArray<int> $cover
@@ -320,9 +386,16 @@ final readonly class PrecomputeTerrain
      * @param \SplFixedArray<int> $towardsWater
      * @param \SplFixedArray<int> $access
      * @param \SplFixedArray<int> $canopyCover
+     * @param \SplFixedArray<int> $soilPhTenths
      * @param \SplFixedArray<int> $park
      * @param \SplFixedArray<int> $path
-     * @return \Generator<int, array{column: int, row: int, profile: TerrainProfile, park: int, path: int}>
+     * @return \Generator<int, array{
+     *     row: int, column: int, latitude: float, longitude: float,
+     *     elevation: int, slope: float, aspect: float, curvature: float,
+     *     cover: int, edge_distance: int, water_distance: int, geology: int,
+     *     access_distance: int, canopy_cover: ?int, soil_ph: ?float,
+     *     park: int, path: int
+     * }>
      */
     private function buildCells(
         Grid $grid,
@@ -335,48 +408,56 @@ final readonly class PrecomputeTerrain
         \SplFixedArray $towardsWater,
         \SplFixedArray $access,
         \SplFixedArray $canopyCover,
+        \SplFixedArray $soilPhTenths,
         \SplFixedArray $park,
         \SplFixedArray $path,
         PrecomputationProgress $progress,
     ): \Generator {
         $stage = 'Écriture de la base précalculée';
         $total = $grid->cellCount();
+        $columns = $grid->columns;
+        $rows = $grid->rows;
+        $south = $grid->bounds->south;
+        $west = $grid->bounds->west;
+        $latStep = $grid->latitudeStep;
+        $lngStep = $grid->longitudeStep;
+        $slope = $derived['slope'];
+        $aspect = $derived['aspect'];
+        $curvature = $derived['curvature'];
 
-        for ($row = 0; $row < $grid->rows; $row++) {
-            $rowOffset = $row * $grid->columns;
+        for ($row = 0; $row < $rows; $row++) {
+            $rowOffset = $row * $columns;
+            $latitude = $south + ($row + 0.5) * $latStep;
 
-            for ($column = 0; $column < $grid->columns; $column++) {
+            for ($column = 0; $column < $columns; $column++) {
                 $index = $rowOffset + $column;
                 $packed = $cover[$index];
-
-                $edgeDistance = StandCode::isOpenGround($packed)
-                    ? -$towardsForest[$index]
-                    : $insideForest[$index];
+                $phTenths = $soilPhTenths[$index];
 
                 yield [
-                    'column' => $column,
                     'row' => $row,
+                    'column' => $column,
+                    'latitude' => $latitude,
+                    'longitude' => $west + ($column + 0.5) * $lngStep,
+                    'elevation' => (int) round($elevation[$index]),
+                    'slope' => round($slope[$index], 2),
+                    'aspect' => round($aspect[$index], 1),
+                    'curvature' => round($curvature[$index], 3),
+                    'cover' => $packed,
+                    'edge_distance' => StandCode::isOpenGround($packed)
+                        ? -$towardsForest[$index]
+                        : $insideForest[$index],
+                    'water_distance' => $towardsWater[$index],
+                    'geology' => $geology[$index],
+                    'access_distance' => $access[$index],
+                    'canopy_cover' => $canopyCover[$index] >= 0 ? $canopyCover[$index] : null,
+                    'soil_ph' => $phTenths >= 0 ? $phTenths / 10.0 : null,
                     'park' => $park[$index],
                     'path' => $path[$index],
-                    'profile' => new TerrainProfile(
-                        coordinates: $grid->coordinatesAt($column, $row),
-                        elevationMeters: (int) round($elevation[$index]),
-                        slopeDegrees: round($derived['slope'][$index], 2),
-                        aspectDegrees: round($derived['aspect'][$index], 1),
-                        curvature: round($derived['curvature'][$index], 3),
-                        cover: StandCode::cover($packed),
-                        edgeDistanceMeters: $edgeDistance,
-                        waterDistanceMeters: $towardsWater[$index],
-                        hostTree: StandCode::host($packed),
-                        canopy: StandCode::canopy($packed),
-                        substrate: Substrate::tryFrom($geology[$index]) ?? Substrate::Unknown,
-                        accessDistanceMeters: $access[$index],
-                        canopyCoverPercent: $canopyCover[$index] >= 0 ? $canopyCover[$index] : null,
-                    ),
                 ];
             }
 
-            if ($row % 40 === 0) {
+            if ($row % self::PROGRESS_EVERY_ROWS === 0) {
                 $progress->stageAdvanced($stage, $rowOffset, $total);
             }
         }

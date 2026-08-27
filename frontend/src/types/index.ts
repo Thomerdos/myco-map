@@ -217,6 +217,7 @@ export interface LocationReport {
     moisture: number
     geology: string
     geologyCode: number
+    soilPh?: number | null
   }
   weather: Weather
   scoringMode: 'moment' | 'habitat'

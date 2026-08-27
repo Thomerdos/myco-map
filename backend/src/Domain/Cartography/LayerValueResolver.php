@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Cartography;
 
 use App\Domain\Terrain\TerrainProfile;
+use App\Domain\Terrain\Substrate;
 use App\Domain\Weather\WeatherConditions;
 
 final readonly class LayerValueResolver
@@ -25,7 +26,7 @@ final readonly class LayerValueResolver
             // the packed StandCode but must not shift this categorical colour scale.
             MapLayer::Cover => (float) $terrain->cover->value,
             MapLayer::StandDensity => $this->standDensityPercent($terrain),
-            MapLayer::Geology => (float) $terrain->substrate->value,
+            MapLayer::Geology => $this->soilPhOrProxy($terrain),
             MapLayer::Moisture => $terrain->moistureIndex() * 100,
             MapLayer::ForestEdge => (float) max(0, $terrain->edgeDistanceMeters),
             MapLayer::Weather => $waterMillimetres,
@@ -46,5 +47,23 @@ final readonly class LayerValueResolver
         $proxy = $terrain->canopy->proxyCoverPercent();
 
         return $proxy === null ? null : (float) $proxy;
+    }
+
+    /**
+     * Continuous EcoDataCube pH when known; otherwise a mid-class Charm-50 proxy so
+     * the continuous legend still paints cells that only have geology.
+     */
+    private function soilPhOrProxy(TerrainProfile $terrain): ?float
+    {
+        if ($terrain->soilPh !== null) {
+            return $terrain->soilPh;
+        }
+
+        return match ($terrain->substrate) {
+            Substrate::Calcareous => 7.4,
+            Substrate::Siliceous => 5.4,
+            Substrate::Mixed => 6.5,
+            Substrate::Unknown => null,
+        };
     }
 }

@@ -84,7 +84,12 @@ final class TerrariumTileElevation implements ElevationSampler
 
     public function elevationAt(Coordinates $point): ?float
     {
-        [$pixelX, $pixelY] = $this->globalPixel($point);
+        return $this->elevationAtLatLng($point->latitude, $point->longitude);
+    }
+
+    public function elevationAtLatLng(float $latitude, float $longitude): ?float
+    {
+        [$pixelX, $pixelY] = $this->globalPixel($latitude, $longitude);
 
         $baseX = (int) floor($pixelX - 0.5);
         $baseY = (int) floor($pixelY - 0.5);
@@ -180,7 +185,7 @@ final class TerrariumTileElevation implements ElevationSampler
     /** @return array{0: int, 1: int} */
     private function tileAt(Coordinates $point): array
     {
-        [$pixelX, $pixelY] = $this->globalPixel($point);
+        [$pixelX, $pixelY] = $this->globalPixel($point->latitude, $point->longitude);
 
         return [
             intdiv((int) floor($pixelX), self::TILE_SIZE),
@@ -189,14 +194,14 @@ final class TerrariumTileElevation implements ElevationSampler
     }
 
     /** @return array{0: float, 1: float} */
-    private function globalPixel(Coordinates $point): array
+    private function globalPixel(float $latitude, float $longitude): array
     {
         $worldSize = self::TILE_SIZE * (2 ** $this->zoom);
-        $latitude = max(-85.05112878, min(85.05112878, $point->latitude));
+        $latitude = max(-85.05112878, min(85.05112878, $latitude));
         $latitudeRadians = deg2rad($latitude);
 
         return [
-            ($point->longitude + 180) / 360 * $worldSize,
+            ($longitude + 180) / 360 * $worldSize,
             (1 - log(tan($latitudeRadians) + 1 / cos($latitudeRadians)) / M_PI) / 2 * $worldSize,
         ];
     }

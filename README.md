@@ -31,7 +31,7 @@ Parcours nominal pour lancer la carte grenobloise telle qu'elle est livrée.
 - [Docker](https://docs.docker.com/get-docker/) avec Compose v2
 
 Rien d'autre sur la machine hôte : PHP, Composer, Node, Python et GDAL tournent dans
-des images. Les commandes `./dev.sh bdforet`, `geologie`, `tcd` et `precompute`
+des images. Les commandes `./dev.sh bdforet`, `geologie`, `tcd`, `soilph` et `precompute`
 passent aussi par Docker.
 
 ### 2. Cloner et démarrer
@@ -76,18 +76,19 @@ de données publics, téléchargeables à la main, affinent le reste :
 | Couche | À quoi ça sert | Sans elle |
 |---|---|---|
 | **BD Forêt** (IGN) | Savoir *quelle* forêt (hêtre, sapin, mixte…) | Essences souvent « indéterminées » (OSM) |
-| **Charm-50** (BRGM) | Calcaire vs siliceux (morille / trompette vs girolle) | Substrat indéterminé partout |
+| **Charm-50** (BRGM) | Repli calcaire / siliceux si pas de pH | Substrat indéterminé partout |
+| **pH du sol** (EcoDataCube) | pH H₂O continu 0–20 cm (30 m) | Repli Charm-50 |
 | **TCD** (Copernicus) | Densité du peuplement en % de couvert | Estimation grossière ouverte / fermée |
 
-Vous pouvez en installer **une seule**, deux, ou les trois. L'ordre n'importe pas. En
-revanche, après chaque ajout (ou une fois les trois faits), il faut **relancer le
+Vous pouvez en installer **une seule** ou plusieurs. L'ordre n'importe pas. En
+revanche, après chaque ajout (ou une fois les couches faites), il faut **relancer le
 précalcul** (étape 5) : sinon la carte continue d'utiliser l'ancienne base.
 
 Les fichiers téléchargés restent sur votre disque dans `backend/var/` (souvent des
 centaines de Mo). Ils ne sont **pas** envoyés sur Git. Les commandes `./dev.sh bdforet`,
-`geologie` et `tcd` s'exécutent **dans Docker** (aucune install Python/GDAL sur l'hôte) :
-placez-vous à la racine du dépôt (`myco-map/`) avec Docker disponible. Le premier
-`geologie` / `tcd` construit une petite image d'outils si besoin.
+`geologie`, `tcd` et `soilph` s'exécutent **dans Docker** (aucune install Python/GDAL sur
+l'hôte) : placez-vous à la racine du dépôt (`myco-map/`) avec Docker disponible. Le premier
+`geologie` / `tcd` / `soilph` construit une petite image d'outils si besoin.
 
 Pour la zone grenobloise, on prend trois départements : **Isère (038)**, **Drôme (026)**
 et **Savoie (073)**. Si vous adaptez une autre région française, remplacez ces numéros
@@ -148,10 +149,23 @@ curl -fL -o backend/var/geologie/source/GEO050K_HARM_073.zip \
 2. Vous pouvez aussi choisir le département sur le
    [formulaire Infoterre](https://infoterre.brgm.fr/formulaire/telechargement-cartes-geologiques-departementales-150-000-bd-charm-50)
    si le lien direct échoue.
-3. Résultat attendu : `backend/var/geologie/formations.geojsonl`. Sans ce fichier, le
-   critère géologie ne discrimine rien.
+3. Résultat attendu : `backend/var/geologie/formations.geojsonl`. Sans ce fichier **et**
+   sans pH EcoDataCube, le critère pH / substrat ne discrimine rien.
 
-#### c. Densité du peuplement — Copernicus Tree Cover Density (Europe)
+#### c. pH du sol — EcoDataCube / AI4SoilHealth (Europe)
+
+Objectif : un **pH H₂O continu** (0–20 cm, 30 m) à la place des classes Charm-50
+souvent « indéterminées » sur les éboulis et moraines. Prédiction pan-européenne
+(CC-BY), sans compte.
+
+```bash
+./dev.sh soilph
+```
+
+Résultat : `backend/var/soilph/soil-ph.bin` (+ `.json`). Puis `./dev.sh precompute`.
+Charm-50 reste utile en repli et pour l'étiquette d'inspection.
+
+#### d. Densité du peuplement — Copernicus Tree Cover Density (Europe)
 
 Objectif : une valeur continue 0–100 % de couvert arboré (meilleure que « forêt ouverte /
 fermée »). Couvre toute l'Europe ; il faut un **compte gratuit**.
@@ -262,7 +276,7 @@ Modèle **par règles expertes**, volontairement transparent :
 | Couvert forestier | 14 % | Essence dominante / feuillu–conifère–mixte |
 | Altitude | 13 % | Tranche altitudinale |
 | Exposition | 13 % | Fraîcheur du versant (ajustée à l'altitude) |
-| Géologie / substrat | 10 % | Calcaire / siliceux / mixte (BRGM Charm-50) |
+| Géologie / pH | 10 % | pH EcoDataCube (repli Charm-50) |
 | Humidité topographique | 9 % | Concavité, drainage, proximité de l'eau |
 | Position lisière | 7 % | Lisière vs cœur de massif |
 | Pente | 2 % | Effet négatif monotone |
@@ -281,7 +295,7 @@ Deux rythmes distincts :
 | Relief (altitude, pente, exposition, courbure) | Au **précalcul** | SQLite `backend/var/data/myco.sqlite` |
 | Couvert forestier, essences, densités FO/FF | Au **précalcul** (BD Forêt ou OSM) | Idem |
 | Distances lisière / eau, réseau d'accès | Au **précalcul** (OSM) | Idem |
-| Géologie / substrat | Au **précalcul** (si Charm-50 converti) | Idem |
+| pH / substrat | Au **précalcul** (EcoDataCube et/ou Charm-50) | Idem |
 | Densité continue 0–100 % | Au **précalcul** (si TCD converti) | Idem |
 | **Météo** (pluie, température, humidité du sol) | **À chaque requête** carte / clic | Cache ~2 h, pas dans la base |
 | Fonds de carte (plan, topo, satellite) | Navigateur, tuiles distantes | Jamais stockés par Myco Map |
@@ -313,7 +327,8 @@ fournie dans `data/` au premier démarrage. Seule la météo se rafraîchit d'el
 | [OpenStreetMap / Overpass](https://overpass-api.de/) | Monde | Couvert (repli), hydrographie, accès | Précalcul |
 | [Open-Meteo](https://open-meteo.com/) | Monde | Pluie, température, humidité du sol | À la volée |
 | [IGN BD Forêt® V2](https://geoservices.ign.fr/bdforet) | France | Essence et densité | Manuel puis précalcul |
-| [BRGM Charm-50](https://infoterre.brgm.fr/formulaire/telechargement-cartes-geologiques-departementales-150-000-bd-charm-50) | France | Substrat | Manuel puis précalcul |
+| [BRGM Charm-50](https://infoterre.brgm.fr/formulaire/telechargement-cartes-geologiques-departementales-150-000-bd-charm-50) | France | Substrat (repli) | Manuel puis précalcul |
+| [EcoDataCube pH](https://s3.ecodatacube.eu/arco/stac/catalog.json) | Europe | pH H₂O 30 m | `./dev.sh soilph` puis précalcul |
 | [Copernicus Tree Cover Density](https://land.copernicus.eu/en/products/high-resolution-layer-forests-and-tree-cover/tree-cover-density-2018-present-raster-10-m-europe-yearly) | Europe | Couvert 0–100 % | Manuel puis précalcul |
 | OpenTopoMap · OSM · Esri | Monde | Fonds de carte | Navigateur |
 
@@ -351,6 +366,7 @@ Ports du domaine (`ElevationSampler`, `LandCoverSource`, `GeologySource`,
 | `./dev.sh export-data` | Réexporte la base vers `data/` |
 | `./dev.sh bdforet <archives…>` | Convertit BD Forêt V2 |
 | `./dev.sh geologie [zip…]` | Convertit BRGM Charm-50 |
+| `./dev.sh soilph` | Télécharge / convertit EcoDataCube pH |
 | `./dev.sh tcd [tif…]` | Télécharge / convertit Copernicus TCD |
 
 ### API
@@ -367,7 +383,8 @@ Ports du domaine (`ElevationSampler`, `LandCoverSource`, `GeologySource`,
   `leaf_type` → « essence indéterminée »).
 - La densité est un **taux de couvert Copernicus** (0–100 %), pas des m²/ha. Sans TCD :
   repli FO/FF.
-- Charm-50 donne un **substrat**, pas un pH mesuré.
+- Le pH EcoDataCube est une **prédiction** (pas des mesures densément réparties) ;
+  Charm-50 reste le repli catégoriel.
 - Les fenêtres de cueillette sont des moyennes régionales, pas la phénologie de l'année.
 - Pression de cueillette, propriété privée et réglementation locale ne sont pas
   modélisées. L'accès parking–chemin est un filtre d'affichage, pas un droit d'entrer.

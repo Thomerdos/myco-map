@@ -117,8 +117,13 @@ precompute() {
     echo "Docker Compose v2 est requis pour le précalcul." >&2
     exit 1
   fi
-  echo "Précalcul via Docker (PHP 8.4)."
-  (cd "${ROOT}" && docker compose run --rm --no-deps backend php bin/console app:precompute "$@")
+  echo "Précalcul via Docker (PHP 8.4, APP_ENV=prod)."
+  # Prod + no-debug: skip Symfony profiler / verbose logging; opcache stays off in the
+  # image ini but container boot and DI are still cheaper without debug dumps.
+  (cd "${ROOT}" && docker compose run --rm --no-deps \
+    -e APP_ENV=prod \
+    -e APP_DEBUG=0 \
+    backend php bin/console --env=prod --no-debug app:precompute "$@")
 }
 
 restore_data() {
@@ -396,6 +401,43 @@ tcd() {
   echo "Relancez ./dev.sh precompute pour écrire la colonne canopy_cover."
 }
 
+# Downloads EcoDataCube / AI4SoilHealth soil pH (H₂O, 30 m) via STAC and warps onto the 50 m grid.
+soilph() {
+  local prefix="${ROOT}/backend/var/soilph/soil-ph"
+  local source_dir="${ROOT}/backend/var/soilph/source"
+
+  require_docker
+  mkdir -p "${source_dir}" "$(dirname "${prefix}")"
+
+  if [[ $# -gt 0 ]]; then
+    echo "Usage: ./dev.sh soilph" >&2
+    echo "Télécharge le dernier pH H₂O EcoDataCube (0–20 cm) pour l'emprise et le recadre à 50 m." >&2
+    exit 1
+  fi
+
+  echo "Résolution STAC EcoDataCube (pH) via Docker…"
+  ensure_tools_image
+  docker run --rm --user "${DOCKER_USER}" \
+    -v "${ROOT}:/work" \
+    -w /work \
+    "${TOOLS_IMAGE}" \
+    python3 scripts/fetch_soil_ph.py /work/backend/var/soilph/source
+  if [[ ! -f "${source_dir}/manifest.json" ]]; then
+    echo "Manifeste pH absent." >&2
+    exit 1
+  fi
+
+  echo "Recadrage pH via Docker (GDAL)…"
+  docker_rm_rf "${prefix}.bin"
+  docker_rm_rf "${prefix}.json"
+  docker_gdal \
+    -v "${ROOT}/scripts:/scripts:ro" \
+    -v "${ROOT}/backend/var/soilph:/soilph" \
+    -- \
+    python3 /scripts/convert_soil_ph.py /soilph/soil-ph --manifest /soilph/source/manifest.json
+  echo "Relancez ./dev.sh precompute pour écrire la colonne soil_ph."
+}
+
 case "${1:-}" in
   install) install_all ;;
   precompute) shift; precompute "$@" ;;
@@ -404,11 +446,12 @@ case "${1:-}" in
   bdforet) shift; bdforet "$@" ;;
   geologie) shift; geologie "$@" ;;
   tcd) shift; tcd "$@" ;;
+  soilph) shift; soilph "$@" ;;
   backend) backend ;;
   frontend) frontend ;;
   docker) docker_up ;;
   *)
-    echo "Usage: ./dev.sh [install|restore-data|precompute|export-data|bdforet|geologie|tcd|backend|frontend|docker]"
+    echo "Usage: ./dev.sh [install|restore-data|precompute|export-data|bdforet|geologie|tcd|soilph|backend|frontend|docker]"
     echo
     echo "  install       Installe les dépendances PHP et JS"
     echo "  restore-data  Restaure la base précalculée depuis data/"
@@ -417,6 +460,7 @@ case "${1:-}" in
     echo "  bdforet       Convertit BD Forêt V2 pour un couvert forestier précis"
     echo "  geologie      Convertit BRGM Charm-50 pour le substrat"
     echo "  tcd           Télécharge / convertit Copernicus Tree Cover Density (0–100 %)"
+    echo "  soilph        Télécharge / convertit EcoDataCube pH du sol (30 m → 50 m)"
     echo "  backend       Démarre l'API sur http://127.0.0.1:8765"
     echo "  frontend      Démarre l'interface sur http://127.0.0.1:43123"
     echo "  docker        Démarre API + interface via Docker Compose"

@@ -16,7 +16,7 @@ final readonly class Species
      * @param array<int, float> $coverAffinity ForestCover value => 0..1 (fallback when the host is unknown)
      * @param array<int, float> $hostAffinity HostTree value => 0..1 (used when the stand names a host)
      * @param array<int, float> $standDensityAffinity CanopyClosure value => 0..1 (FO/FF fallback)
-     * @param array<int, float> $geologyAffinity Substrate value => 0..1
+     * @param array<int, float> $geologyAffinity Substrate value => 0..1 (Charm-50 fallback)
      */
     public function __construct(
         public string $id,
@@ -40,6 +40,7 @@ final readonly class Species
         public array $standDensityAffinity = [],
         public array $geologyAffinity = [],
         public ?CanopyDensityBand $canopyDensity = null,
+        public ?PhBand $phOptimum = null,
     ) {
     }
 
@@ -104,8 +105,17 @@ final readonly class Species
         };
     }
 
-    public function geologySuitability(Substrate $substrate): float
+    /**
+     * Prefers continuous EcoDataCube pH when known; otherwise Charm-50 substrate classes.
+     */
+    public function geologySuitability(Substrate $substrate, ?float $soilPh = null): float
     {
+        if ($soilPh !== null) {
+            $band = $this->phOptimum ?? new PhBand();
+
+            return max(0.0, min(1.0, $band->suitability($soilPh)));
+        }
+
         if (isset($this->geologyAffinity[$substrate->value])) {
             return max(0.0, min(1.0, $this->geologyAffinity[$substrate->value]));
         }
