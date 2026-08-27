@@ -484,6 +484,18 @@ Ports du domaine (`ElevationSampler`, `LandCoverSource`, `GeologySource`,
 - Pression de cueillette, propriété privée et réglementation locale ne sont pas
   modélisées. L'accès parking–chemin est un filtre d'affichage, pas un droit d'entrer.
 
+## Contribuer
+
+Les messages de commit suivent [Conventional Commits](https://www.conventionalcommits.org/) :
+`type: description` en français pour la description, types en anglais
+(`feat`, `fix`, `perf`, `refactor`, `docs`, `build`, `ci`, `style`, `chore`).
+Sujet sur une ligne, corps optionnel après une ligne vide.
+
+Exemple : `docs: documenter les Conventional Commits dans le README`.
+
+Les conventions agents / dépôt (modèle, sources, emprise) sont dans
+[`AGENTS.md`](AGENTS.md).
+
 ## Licence et attribution
 
 Le **code** est sous licence [MIT](LICENSE).
