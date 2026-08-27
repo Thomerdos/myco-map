@@ -157,7 +157,7 @@ final readonly class SuitabilityCalculator
             }
 
             // Habitat alone must not read as "go now" while fruitbodies are still incubating.
-        $phenology = FlushClock::phenology($species, $weather);
+            $phenology = FlushClock::phenology($species, $weather);
             if ($phenology < 25.0) {
                 $total = min($total, 48.0);
             } elseif ($phenology < 45.0) {
@@ -165,7 +165,22 @@ final readonly class SuitabilityCalculator
             }
         }
 
+        $total = $this->compressUpperBand($total);
+
         return max(0.0, min(100.0, $total));
+    }
+
+    /**
+     * Soft-compress the upper band so a broad “good forest” plateau cannot all clear 90.
+     * Ranking below 80 is unchanged. With factor 0.60: raw 90 → 86, raw 97 → 90.2, raw 100 → 92.
+     */
+    private function compressUpperBand(float $total): float
+    {
+        if ($total <= 80.0) {
+            return $total;
+        }
+
+        return 80.0 + ($total - 80.0) * 0.60;
     }
 
     /**
