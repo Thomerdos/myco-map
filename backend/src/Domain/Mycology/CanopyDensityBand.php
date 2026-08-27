@@ -12,10 +12,10 @@ namespace App\Domain\Mycology;
 final readonly class CanopyDensityBand
 {
     public function __construct(
-        public int $optimumLow = 56,
-        public int $optimumHigh = 62,
-        public float $closedFloor = 0.58,
-        public float $sparseFloor = 0.18,
+        public int $optimumLow = 55,
+        public int $optimumHigh = 64,
+        public float $closedFloor = 0.62,
+        public float $sparseFloor = 0.20,
     ) {
     }
 
