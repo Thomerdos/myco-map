@@ -172,7 +172,7 @@ final readonly class SuitabilityCalculator
 
     /**
      * Soft-compress the upper band so a broad “good forest” plateau cannot all clear 90.
-     * Ranking below 80 is unchanged. With factor 0.60: raw 90 → 86, raw 97 → 90.2, raw 100 → 92.
+     * Ranking below 80 is unchanged. Factor 0.75: raw 90 → 87.5, raw ~93 → 90, raw 100 → 95.
      */
     private function compressUpperBand(float $total): float
     {
@@ -180,7 +180,7 @@ final readonly class SuitabilityCalculator
             return $total;
         }
 
-        return 80.0 + ($total - 80.0) * 0.60;
+        return 80.0 + ($total - 80.0) * 0.75;
     }
 
     /**

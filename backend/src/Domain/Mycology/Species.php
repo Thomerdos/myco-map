@@ -87,8 +87,8 @@ final readonly class Species
 
         if ($canopyCoverPercent !== null) {
             $band = $this->canopyDensity ?? new CanopyDensityBand(
-                closedFloor: $this->requiresForest ? 0.58 : 0.48,
-                sparseFloor: $this->requiresForest ? 0.18 : 0.60,
+                closedFloor: $this->requiresForest ? 0.62 : 0.50,
+                sparseFloor: $this->requiresForest ? 0.20 : 0.60,
             );
 
             return max(0.0, min(1.0, $band->suitability($canopyCoverPercent)));
@@ -100,8 +100,8 @@ final readonly class Species
 
         return match ($canopy) {
             CanopyClosure::Unknown => 0.55,
-            CanopyClosure::Open => $this->requiresForest ? 0.82 : 0.88,
-            CanopyClosure::Closed => $this->requiresForest ? 0.58 : 0.58,
+            CanopyClosure::Open => $this->requiresForest ? 0.84 : 0.90,
+            CanopyClosure::Closed => $this->requiresForest ? 0.62 : 0.60,
         };
     }
 
