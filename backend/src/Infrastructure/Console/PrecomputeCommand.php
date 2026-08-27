@@ -25,7 +25,7 @@ final class PrecomputeCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        ini_set('memory_limit', '3G');
+        ini_set('memory_limit', '6G');
 
         $io = new SymfonyStyle($input, $output);
         $io->title('Précalcul de la zone Grenoble — Chartreuse, Belledonne, Vercors');
