@@ -6,7 +6,7 @@ namespace App\Domain\Mycology;
 
 /**
  * Thresholds follow the potential legend. 90 is the hotspot cut for secteurs;
- * the Feu colour/opacity ramp is linear from 70–100 (visual only).
+ * the colour ramp is yellow→red to 90, then frank violet/fuchsia (visual only).
  */
 enum SuitabilityLevel: string
 {

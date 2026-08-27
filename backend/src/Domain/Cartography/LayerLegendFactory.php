@@ -12,8 +12,8 @@ final readonly class LayerLegendFactory
     public function create(MapLayer $layer, ScoringMode $mode = ScoringMode::Moment): LayerLegend
     {
         return match ($layer) {
-            // « Feu » linéaire 70→100 : une seule famille thermique (ambre→orange→rouge→
-            // crème), stops réguliers, lisible sur ortho. Sous 70 reste fantôme.
+            // Deux familles : jaune→rouge 70–90, puis violet/fuchsia franc ≥ 90
+            // (seuil excellence). Sous 70 reste fantôme.
             MapLayer::Potential => $this->potentialLegend(
                 $mode === ScoringMode::Habitat ? 'Potentiel d\'habitat' : $layer->label(),
             ),
@@ -95,13 +95,14 @@ final readonly class LayerLegendFactory
         return new LayerLegend($title, null, false, [
             ['value' => 0, 'label' => 'À éviter', 'color' => '#0c0e14'],
             ['value' => 60, 'label' => '', 'color' => '#1e2430'],
-            ['value' => 70, 'label' => '70', 'color' => '#8b5e12'],
-            ['value' => 75, 'label' => '', 'color' => '#b8730a'],
-            ['value' => 80, 'label' => '80', 'color' => '#d98900'],
-            ['value' => 85, 'label' => 'Correct', 'color' => '#f0a000'],
-            ['value' => 90, 'label' => '90', 'color' => '#ff6b1a'],
-            ['value' => 95, 'label' => 'Prometteur', 'color' => '#dc2626'],
-            ['value' => 100, 'label' => 'Top', 'color' => '#fff5e6'],
+            ['value' => 70, 'label' => '70', 'color' => '#eab308'],
+            ['value' => 75, 'label' => '', 'color' => '#f59e0b'],
+            ['value' => 80, 'label' => '80', 'color' => '#f97316'],
+            ['value' => 85, 'label' => 'Correct', 'color' => '#ea580c'],
+            ['value' => 90, 'label' => '90', 'color' => '#dc2626'],
+            ['value' => 93, 'label' => 'Prometteur', 'color' => '#c026d3'],
+            ['value' => 96, 'label' => '96', 'color' => '#e879f9'],
+            ['value' => 100, 'label' => 'Top', 'color' => '#fce7f3'],
         ], true);
     }
 }
