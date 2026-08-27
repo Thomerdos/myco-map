@@ -17,4 +17,10 @@ interface ElevationSampler
     public function prepare(BoundingBox $bounds): int;
 
     public function elevationAt(Coordinates $point): ?float;
+
+    /**
+     * Same as {@see elevationAt()} without allocating a Coordinates value object —
+     * critical on the full precompute lattice (~2 M cells).
+     */
+    public function elevationAtLatLng(float $latitude, float $longitude): ?float;
 }

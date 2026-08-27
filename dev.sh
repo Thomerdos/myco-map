@@ -117,8 +117,13 @@ precompute() {
     echo "Docker Compose v2 est requis pour le précalcul." >&2
     exit 1
   fi
-  echo "Précalcul via Docker (PHP 8.4)."
-  (cd "${ROOT}" && docker compose run --rm --no-deps backend php bin/console app:precompute "$@")
+  echo "Précalcul via Docker (PHP 8.4, APP_ENV=prod)."
+  # Prod + no-debug: skip Symfony profiler / verbose logging; opcache stays off in the
+  # image ini but container boot and DI are still cheaper without debug dumps.
+  (cd "${ROOT}" && docker compose run --rm --no-deps \
+    -e APP_ENV=prod \
+    -e APP_DEBUG=0 \
+    backend php bin/console --env=prod --no-debug app:precompute "$@")
 }
 
 restore_data() {

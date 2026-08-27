@@ -25,10 +25,10 @@ final class PrecomputeCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        ini_set('memory_limit', '6G');
+        ini_set('memory_limit', '2G');
 
         $io = new SymfonyStyle($input, $output);
-        $io->title('Précalcul de la zone Grenoble — Chartreuse, Belledonne, Vercors');
+        $io->title(sprintf('Précalcul — %s', $_SERVER['APP_ENV'] ?? getenv('APP_ENV') ?: 'unknown'));
 
         try {
             $report = ($this->precomputeTerrain)(new class($io) implements PrecomputationProgress {
@@ -59,12 +59,13 @@ final class PrecomputeCommand extends Command
         }
 
         $io->success(sprintf(
-            '%s mailles de %d m (%d × %d) en %.0f s — %d tuiles de relief, %d polygones forestiers, %d formations géologiques, %d éléments hydro, %d voies d\'accès, %d mailles TCD, %d mailles pH',
+            '%s mailles de %d m (%d × %d) en %.0f s (pic mémoire PHP %.0f Mo) — %d tuiles de relief, %d polygones forestiers, %d formations géologiques, %d éléments hydro, %d voies d\'accès, %d mailles TCD, %d mailles pH',
             number_format($report->cells, 0, ',', ' '),
             $report->cellSizeMeters,
             $report->columns,
             $report->rows,
             $report->durationSeconds,
+            memory_get_peak_usage(true) / 1_048_576,
             $report->elevationTiles,
             $report->forestPolygons,
             $report->geologyPolygons,
