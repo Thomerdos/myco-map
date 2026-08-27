@@ -89,6 +89,7 @@ final readonly class InspectLocation
                 'moisture' => round($profile->moistureIndex() * 100),
                 'geology' => $profile->substrate->label(),
                 'geologyCode' => $profile->substrate->value,
+                'soilPh' => $profile->soilPh !== null ? round($profile->soilPh, 1) : null,
             ],
             'weather' => FlushClock::decorate($weather, $species, $date),
             'scoringMode' => $mode->value,

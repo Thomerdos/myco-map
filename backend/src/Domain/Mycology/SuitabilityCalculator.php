@@ -329,7 +329,7 @@ final readonly class SuitabilityCalculator
 
     private function geologyValue(Species $species, TerrainProfile $terrain): float
     {
-        return $species->geologySuitability($terrain->substrate) * 100;
+        return $species->geologySuitability($terrain->substrate, $terrain->soilPh) * 100;
     }
 
     private function moistureValue(Species $species, TerrainProfile $terrain): float
@@ -464,10 +464,29 @@ final readonly class SuitabilityCalculator
 
     private function explainGeology(Species $species, TerrainProfile $terrain): string
     {
+        $affinity = $species->geologySuitability($terrain->substrate, $terrain->soilPh) * 100;
+
+        if ($terrain->soilPh !== null) {
+            $band = $species->phOptimum ?? new PhBand();
+            $note = match (true) {
+                $terrain->soilPh >= $band->optimumLow && $terrain->soilPh <= $band->optimumHigh => ', dans l\'optimum de pH',
+                $terrain->soilPh > $band->optimumHigh => ', plus basique que l\'optimum',
+                default => ', plus acide que l\'optimum',
+            };
+
+            return sprintf(
+                'pH %.1f (EcoDataCube 0–20 cm)%s — affinité %.0f / 100 pour %s',
+                $terrain->soilPh,
+                $note,
+                $affinity,
+                lcfirst($species->commonName),
+            );
+        }
+
         return sprintf(
-            '%s — affinité %.0f / 100 pour %s',
+            '%s (Charm-50) — affinité %.0f / 100 pour %s',
             $terrain->substrate->label(),
-            $species->geologySuitability($terrain->substrate) * 100,
+            $affinity,
             lcfirst($species->commonName),
         );
     }

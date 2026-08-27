@@ -52,6 +52,13 @@ const placeSummary = computed(() => {
   return `${terrain.elevation} m · ${cover.toLowerCase()}`
 })
 
+const soilPhLabel = computed(() => {
+  if (!props.report) return ''
+  const { soilPh, geology } = props.report.terrain
+  if (soilPh != null) return `pH ${soilPh.toFixed(1)}`
+  return geology
+})
+
 const walkSummary = computed(() => {
   if (!props.report) return ''
   return formatWalk(props.report) ?? "hors d'atteinte"
@@ -397,7 +404,7 @@ ${points}
             <dd class="m-0 font-semibold">{{ formatWalk(props.report) ?? 'hors d\'atteinte' }}</dd>
           </div>
           <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Humidité</dt><dd class="m-0 font-semibold">{{ props.report.terrain.moisture }} / 100</dd></div>
-          <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">Géologie</dt><dd class="m-0 font-semibold">{{ props.report.terrain.geology }}</dd></div>
+          <div class="flex justify-between gap-2 border-b border-dotted border-[#ddd5c3] pb-0.5"><dt class="text-secondary">pH / substrat</dt><dd class="m-0 font-semibold">{{ soilPhLabel }}</dd></div>
         </dl>
       </DisclosureSection>
 

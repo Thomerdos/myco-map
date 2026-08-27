@@ -17,12 +17,19 @@ use Doctrine\DBAL\Connection;
 
 final class DbalTerrainCellStore implements TerrainCellStore
 {
-    private const INSERT_CHUNK = 500;
+    /** Multi-row INSERT size. 1000 × 17 binds stays under typical SQLite var limits. */
+    private const INSERT_CHUNK = 1000;
+
+    private const COLUMNS = 17;
 
     private ?Grid $cachedGrid = null;
     private ?bool $hasAccessColumn = null;
     private ?bool $hasCanopyCoverColumn = null;
+    private ?bool $hasSoilPhColumn = null;
     private ?bool $hasNetworkColumns = null;
+
+    /** @var array<int, string> */
+    private array $placeholderCache = [];
 
     public function __construct(private readonly Connection $connection)
     {
@@ -32,6 +39,10 @@ final class DbalTerrainCellStore implements TerrainCellStore
     {
         $this->connection->executeStatement('PRAGMA journal_mode = WAL');
         $this->connection->executeStatement('PRAGMA synchronous = OFF');
+        $this->connection->executeStatement('PRAGMA temp_store = MEMORY');
+        $this->connection->executeStatement('PRAGMA cache_size = -200000'); // ~200 MiB
+        $this->connection->executeStatement('PRAGMA mmap_size = 268435456');
+        $this->connection->executeStatement('PRAGMA locking_mode = EXCLUSIVE');
 
         // Recreate so schema upgrades (geology column) apply on every precompute.
         $this->connection->executeStatement('DROP TABLE IF EXISTS terrain_cell');
@@ -52,6 +63,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
                 geology INTEGER NOT NULL DEFAULT 0,
                 access_distance INTEGER NOT NULL DEFAULT 9999,
                 canopy_cover INTEGER,
+                soil_ph REAL,
                 park INTEGER NOT NULL DEFAULT 0,
                 path INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (row_index, column_index)
@@ -84,37 +96,16 @@ final class DbalTerrainCellStore implements TerrainCellStore
 
         try {
             foreach ($cells as $cell) {
-                /** @var TerrainProfile $profile */
-                $profile = $cell['profile'];
-
-                $buffer[] = [
-                    $cell['row'],
-                    $cell['column'],
-                    $profile->coordinates->latitude,
-                    $profile->coordinates->longitude,
-                    $profile->elevationMeters,
-                    $profile->slopeDegrees,
-                    $profile->aspectDegrees,
-                    $profile->curvature,
-                    $profile->standCode(),
-                    $profile->edgeDistanceMeters,
-                    $profile->waterDistanceMeters,
-                    $profile->substrate->value,
-                    $profile->accessDistanceMeters,
-                    $profile->canopyCoverPercent,
-                    (int) ($cell['park'] ?? 0),
-                    (int) ($cell['path'] ?? 0),
-                ];
-
+                $buffer[] = $cell;
                 if (\count($buffer) >= self::INSERT_CHUNK) {
-                    $this->flush($buffer);
+                    $this->flushChunk($buffer);
                     $written += \count($buffer);
                     $buffer = [];
                 }
             }
 
             if ($buffer !== []) {
-                $this->flush($buffer);
+                $this->flushChunk($buffer);
                 $written += \count($buffer);
             }
 
@@ -140,11 +131,14 @@ final class DbalTerrainCellStore implements TerrainCellStore
             $this->connection->rollBack();
 
             throw $exception;
+        } finally {
+            $this->connection->executeStatement('PRAGMA locking_mode = NORMAL');
         }
 
         $this->cachedGrid = null;
         $this->hasAccessColumn = true;
         $this->hasCanopyCoverColumn = true;
+        $this->hasSoilPhColumn = true;
         $this->hasNetworkColumns = true;
 
         return $written;
@@ -189,7 +183,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
     public function readWindow(GridWindow $window): iterable
     {
         $sql = 'SELECT column_index, row_index, latitude, longitude, elevation, slope, aspect, curvature,
-                       cover, edge_distance, water_distance, geology'.$this->accessSelect().$this->canopyCoverSelect().$this->networkSelect().'
+                       cover, edge_distance, water_distance, geology'.$this->accessSelect().$this->canopyCoverSelect().$this->soilPhSelect().$this->networkSelect().'
                 FROM terrain_cell
                 WHERE row_index BETWEEN :firstRow AND :lastRow
                   AND column_index BETWEEN :firstColumn AND :lastColumn';
@@ -224,7 +218,7 @@ final class DbalTerrainCellStore implements TerrainCellStore
     {
         $row = $this->connection->fetchAssociative(
             'SELECT column_index, row_index, latitude, longitude, elevation, slope, aspect, curvature,
-                    cover, edge_distance, water_distance, geology'.$this->accessSelect().$this->canopyCoverSelect().'
+                    cover, edge_distance, water_distance, geology'.$this->accessSelect().$this->canopyCoverSelect().$this->soilPhSelect().'
              FROM terrain_cell
              WHERE latitude BETWEEN :latMin AND :latMax
                AND longitude BETWEEN :lngMin AND :lngMax
@@ -244,24 +238,54 @@ final class DbalTerrainCellStore implements TerrainCellStore
         return $row === false ? null : $this->hydrate($row);
     }
 
-    /** @param list<array<int, float|int|null>> $buffer */
-    private function flush(array $buffer): void
+    /**
+     * @param list<array{
+     *     row: int, column: int, latitude: float, longitude: float,
+     *     elevation: int, slope: float, aspect: float, curvature: float,
+     *     cover: int, edge_distance: int, water_distance: int, geology: int,
+     *     access_distance: int, canopy_cover: ?int, soil_ph: ?float,
+     *     park: int, path: int
+     * }> $buffer
+     */
+    private function flushChunk(array $buffer): void
     {
-        $placeholders = implode(',', array_fill(0, \count($buffer), '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'));
-        $parameters = [];
-
-        foreach ($buffer as $values) {
-            foreach ($values as $value) {
-                $parameters[] = $value;
-            }
+        $flat = [];
+        foreach ($buffer as $cell) {
+            $flat[] = $cell['row'];
+            $flat[] = $cell['column'];
+            $flat[] = $cell['latitude'];
+            $flat[] = $cell['longitude'];
+            $flat[] = $cell['elevation'];
+            $flat[] = $cell['slope'];
+            $flat[] = $cell['aspect'];
+            $flat[] = $cell['curvature'];
+            $flat[] = $cell['cover'];
+            $flat[] = $cell['edge_distance'];
+            $flat[] = $cell['water_distance'];
+            $flat[] = $cell['geology'];
+            $flat[] = $cell['access_distance'];
+            $flat[] = $cell['canopy_cover'];
+            $flat[] = $cell['soil_ph'];
+            $flat[] = $cell['park'];
+            $flat[] = $cell['path'];
         }
 
         $this->connection->executeStatement(
-            'INSERT OR REPLACE INTO terrain_cell
-             (row_index, column_index, latitude, longitude, elevation, slope, aspect, curvature, cover, edge_distance, water_distance, geology, access_distance, canopy_cover, park, path)
-             VALUES ' . $placeholders,
-            $parameters,
+            'INSERT INTO terrain_cell
+             (row_index, column_index, latitude, longitude, elevation, slope, aspect, curvature, cover, edge_distance, water_distance, geology, access_distance, canopy_cover, soil_ph, park, path)
+             VALUES '.$this->placeholders(\count($buffer)),
+            $flat,
         );
+    }
+
+    private function placeholders(int $rows): string
+    {
+        if (!isset($this->placeholderCache[$rows])) {
+            $tuple = '('.implode(',', array_fill(0, self::COLUMNS, '?')).')';
+            $this->placeholderCache[$rows] = implode(',', array_fill(0, $rows, $tuple));
+        }
+
+        return $this->placeholderCache[$rows];
     }
 
     /** @param array<string, mixed> $row */
@@ -285,6 +309,9 @@ final class DbalTerrainCellStore implements TerrainCellStore
             canopyCoverPercent: isset($row['canopy_cover']) && $row['canopy_cover'] !== null
                 ? (int) $row['canopy_cover']
                 : null,
+            soilPh: isset($row['soil_ph']) && $row['soil_ph'] !== null
+                ? (float) $row['soil_ph']
+                : null,
         );
     }
 
@@ -296,6 +323,11 @@ final class DbalTerrainCellStore implements TerrainCellStore
     private function canopyCoverSelect(): string
     {
         return $this->hasCanopyCoverColumn() ? ', canopy_cover' : '';
+    }
+
+    private function soilPhSelect(): string
+    {
+        return $this->hasSoilPhColumn() ? ', soil_ph' : '';
     }
 
     private function networkSelect(): string
@@ -313,10 +345,12 @@ final class DbalTerrainCellStore implements TerrainCellStore
             $names = $this->connection->fetchFirstColumn("SELECT name FROM pragma_table_info('terrain_cell')");
             $this->hasAccessColumn = \in_array('access_distance', $names, true);
             $this->hasCanopyCoverColumn = \in_array('canopy_cover', $names, true);
+            $this->hasSoilPhColumn = \in_array('soil_ph', $names, true);
             $this->hasNetworkColumns = \in_array('park', $names, true) && \in_array('path', $names, true);
         } catch (\Throwable) {
             $this->hasAccessColumn = false;
             $this->hasCanopyCoverColumn = false;
+            $this->hasSoilPhColumn = false;
             $this->hasNetworkColumns = false;
         }
 
@@ -332,6 +366,17 @@ final class DbalTerrainCellStore implements TerrainCellStore
         $this->hasAccessColumn();
 
         return $this->hasCanopyCoverColumn ?? false;
+    }
+
+    private function hasSoilPhColumn(): bool
+    {
+        if ($this->hasSoilPhColumn !== null) {
+            return $this->hasSoilPhColumn;
+        }
+
+        $this->hasAccessColumn();
+
+        return $this->hasSoilPhColumn ?? false;
     }
 
     private function hasNetworkColumns(): bool
