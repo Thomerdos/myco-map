@@ -94,10 +94,15 @@ l'intersection rare (densité TCD optimale × hôte × couvert × substrat/pH), 
 et un `best` qui ne colle plus au plafond. Légende / seuils 90 **non recalés** tant que la
 nouvelle distribution n'est pas mesurée.
 
-**Compression du haut de bande (suite).** `compressUpperBand` applique un facteur **0,75**
-au-dessus de 80 (raw 90 → 87,5 ; raw ~93 → 90 ; plafond ~95). Classement &lt; 80 inchangé.
-Assoupli depuis 0,60 (trop dur : plus aucune maille ≥ 90). Ajuster vers 0,70 / 0,80 selon
-la densité de sommets observée.
+**Pas de compression artificielle du score.** Un `compressUpperBand` a été essayé puis retiré
+(août 2026) : trop opaque et trop dur à caler. La discrimination reste sur les profils
+(densité × hôte × pH) et les prochaines sources (LIDAR HD, MNT IGN).
+
+**Base SQLite runtime.** En local, `backend/.env.local` pointe vers
+`var/data-local/myco.sqlite` (précalcul récent avec `canopy_cover` + `soil_ph`).
+`var/data/myco.sqlite` peut être une archive plus ancienne **sans** ces colonnes — ne pas
+s'y fier pour juger le modèle. Après `./dev.sh tcd` / `soilph`, relancer `precompute` vers
+la DB réellement lue par le backend.
 
 **Note sur le poids météo.** Dans les modèles publiés, la météo explique l'essentiel de la
 variabilité **interannuelle**. Ici la carte est spatiale et à date fixe : la météo est quasi
